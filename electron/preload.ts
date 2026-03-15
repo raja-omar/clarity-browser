@@ -7,6 +7,8 @@ import type {
   EnergyLog,
   JiraSettings,
   Meeting,
+  OverwhelmSession,
+  SaveOverwhelmSessionInput,
   Task,
   TaskStatus,
   UpdateMeetingSupportInput,
@@ -36,4 +38,8 @@ contextBridge.exposeInMainWorld("clarity", {
   chatWithCoach: (payload: CoachChatRequest): Promise<CoachChatResponse> =>
     ipcRenderer.invoke("clarity:chat-with-coach", payload),
   hasOpenAIKey: (): Promise<{ configured: boolean }> => ipcRenderer.invoke("clarity:has-openai-key"),
+  saveOverwhelmSession: (payload: SaveOverwhelmSessionInput): Promise<OverwhelmSession> =>
+    ipcRenderer.invoke("clarity:save-overwhelm-session", payload),
+  listOverwhelmSessions: (limit?: number): Promise<OverwhelmSession[]> =>
+    ipcRenderer.invoke("clarity:list-overwhelm-sessions", limit),
 });

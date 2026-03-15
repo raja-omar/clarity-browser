@@ -38,6 +38,8 @@ export function JiraReliefPopup({ reminder, open, onClose }: JiraReliefPopupProp
   const [aiResult, setAiResult] = useState<ReliefPlanResult | undefined>(undefined);
   const [startedAction, setStartedAction] = useState<string | undefined>(undefined);
   const [copiedMessage, setCopiedMessage] = useState(false);
+  const [showBackupStep, setShowBackupStep] = useState(false);
+  const [showMessageDraft, setShowMessageDraft] = useState(false);
 
   useEffect(() => {
     setCurrentStep("feeling");
@@ -48,6 +50,8 @@ export function JiraReliefPopup({ reminder, open, onClose }: JiraReliefPopupProp
     setAiResult(undefined);
     setStartedAction(undefined);
     setCopiedMessage(false);
+    setShowBackupStep(false);
+    setShowMessageDraft(false);
   }, [reminder.key]);
 
   async function handleGeneratePlan(): Promise<void> {
@@ -66,6 +70,9 @@ export function JiraReliefPopup({ reminder, open, onClose }: JiraReliefPopupProp
         recipientName: reminder.task?.escalationContact || reminder.task?.ownerName,
       });
       setAiResult(result);
+      const directEscalation = shouldDirectEscalation(overwhelmCause, userContextInput);
+      setShowBackupStep(false);
+      setShowMessageDraft(directEscalation);
       setCurrentStep("result");
     } finally {
       setAiLoading(false);
@@ -187,30 +194,52 @@ export function JiraReliefPopup({ reminder, open, onClose }: JiraReliefPopupProp
                 <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
                   <SectionHeader title="AI relief plan" subtitle={selectedFeeling === "overwhelmed" ? "Practical next steps for this ticket." : "Supportive plan."} />
                   <p className="mt-3 text-sm leading-6 text-slate-200">{aiResult.summary}</p>
+                  {showMessageDraft && overwhelmCause === "personal" ? (
+                    <p className="mt-1 text-xs text-rose-200/90">
+                      This personal context sounds urgent. Informing your senior contact now is recommended.
+                    </p>
+                  ) : null}
 
                   <AIPlanCard
-                    title="Recommendation 1"
+                    title="Relief activity"
                     body={aiResult.firstAction}
                     tone="action"
                   />
-                  <AIPlanCard
-                    title={overwhelmCause === "work" ? "Recommendation 2" : "Message draft"}
-                    body={aiResult.helpMessage}
-                    tone="message"
-                  />
 
-                  {aiResult.optionalNextSteps.length > 0 ? (
-                    <div className="mt-3 rounded-lg border border-white/8 bg-black/20 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Optional next steps</p>
-                      <ul className="mt-2 space-y-1">
-                        {aiResult.optionalNextSteps.map((step) => (
-                          <li key={step} className="flex items-start gap-2 text-xs text-slate-300">
-                            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/90" />
-                            <span>{step}</span>
-                          </li>
-                        ))}
-                      </ul>
+                  {!showBackupStep && !showMessageDraft ? (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowBackupStep(true)}
+                        className="rounded-lg border border-indigo-400/25 bg-indigo-500/15 px-3 py-1.5 text-xs text-indigo-100 transition hover:bg-indigo-500/20"
+                      >
+                        Need more help
+                      </button>
                     </div>
+                  ) : null}
+
+                  {showBackupStep && aiResult.optionalNextSteps[0] ? (
+                    <AIPlanCard title="Backup step" body={aiResult.optionalNextSteps[0]} tone="action" />
+                  ) : null}
+
+                  {showBackupStep && !showMessageDraft ? (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowMessageDraft(true)}
+                        className="rounded-lg border border-indigo-400/25 bg-indigo-500/15 px-3 py-1.5 text-xs text-indigo-100 transition hover:bg-indigo-500/20"
+                      >
+                        Still blocked
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {showMessageDraft ? (
+                    <AIPlanCard
+                      title="Message draft"
+                      body={aiResult.helpMessage}
+                      tone="message"
+                    />
                   ) : null}
 
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -219,13 +248,15 @@ export function JiraReliefPopup({ reminder, open, onClose }: JiraReliefPopupProp
                       onClick={() => handleStartAction(aiResult.firstAction)}
                       className="rounded-lg border border-indigo-400/25 bg-indigo-500/15 px-3 py-1.5 text-xs text-indigo-100 transition hover:bg-indigo-500/20"
                     >
-                      {overwhelmCause === "work" ? "Start first step" : "Start small step"}
+                      {overwhelmCause === "work" ? "Start relief step" : "Start small step"}
                     </button>
-                    <CopyMessageButton
-                      label={overwhelmCause === "work" ? "Copy help message" : "Copy message"}
-                      copied={copiedMessage}
-                      onClick={() => void handleCopyMessage(aiResult.helpMessage)}
-                    />
+                    {showMessageDraft ? (
+                      <CopyMessageButton
+                        label={overwhelmCause === "work" ? "Copy help message" : "Copy message"}
+                        copied={copiedMessage}
+                        onClick={() => void handleCopyMessage(aiResult.helpMessage)}
+                      />
+                    ) : null}
                     {overwhelmCause === "work" ? (
                       <button
                         type="button"
@@ -518,4 +549,22 @@ function formatDueLabel(dueAt: string): string {
       }).format(dueDate);
 
   return `Due on ${formatted}`;
+}
+
+function shouldDirectEscalation(cause: JiraReliefCause | undefined, explanation: string): boolean {
+  if (cause !== "personal") return false;
+  const lower = explanation.toLowerCase();
+  return [
+    "passed away",
+    "death",
+    "bereavement",
+    "funeral",
+    "hospital",
+    "hospitalized",
+    "er",
+    "emergency",
+    "crisis",
+    "accident",
+    "icu",
+  ].some((token) => lower.includes(token));
 }

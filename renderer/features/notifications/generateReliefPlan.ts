@@ -64,6 +64,7 @@ async function tryGenerateReliefPlanWithCoach(
 }
 
 function buildReliefPlanPrompt(input: GenerateReliefPlanInput): string {
+  const severePersonal = isExtremePersonalContext(input.cause, input.userExplanation);
   const recipientName = input.recipientName || "team lead";
   const recipientRole =
     input.cause === "work" ? "a senior engineer who can unblock the ticket" : "a manager or senior engineer";
@@ -83,6 +84,7 @@ Root cause: ${input.cause === "work" ? "a work-related blocker (technical, proce
 In their own words: "${input.userExplanation}"
 
 The person they'd reach out to for help is ${recipientName} (${recipientRole}).
+Severe personal situation detected: ${severePersonal ? "yes" : "no"}
 
 Your task:
 1. Read the ticket description carefully — understand what the actual work involves (e.g. specific systems, APIs, tests, components mentioned).
@@ -105,6 +107,8 @@ Field guidance:
 
 Hard rules:
 - Every field must reference something specific from the ticket description or the developer's explanation. No generic advice.
+- Do not front-load escalation: provide one relief activity first, then one backup step, then communication as a last resort.
+- If the personal situation sounds severe, prioritize informing ${recipientName} immediately and reflect that in firstAction/helpMessage.
 - No markdown fences, no extra text outside the JSON.`;
 }
 
@@ -157,6 +161,9 @@ function buildFallbackPlan(input: GenerateReliefPlanInput): ReliefPlanResult {
   if (input.cause === "work") {
     return buildWorkPlan(input);
   }
+  if (isExtremePersonalContext(input.cause, input.userExplanation)) {
+    return buildExtremePersonalPlan(input);
+  }
 
   return buildPersonalPlan(input);
 }
@@ -193,8 +200,24 @@ function buildPersonalPlan(input: GenerateReliefPlanInput): ReliefPlanResult {
     firstAction: personalStep,
     helpMessage: `Hi ${recipientName}, I wanted to flag that I’m having a difficult moment today while working on "${input.ticketTitle}". ${explanationSnippet} I can still make progress, but I may need ${supportAngle}. If you have a moment, I’d appreciate help narrowing the immediate priority or adjusting expectations for the next block.`,
     optionalNextSteps: [
-      explanation ? `Keep the first step smaller than the whole issue: ${trimSentence(explanation)}.` : "Keep the first step smaller than the whole issue.",
-      "Send the note early instead of waiting until the ticket feels worse.",
+      explanation
+        ? `Backup step: shrink scope to one realistic deliverable for this block (${trimSentence(explanation)}).`
+        : "Backup step: shrink scope to one realistic deliverable for this block.",
+      "If that still feels too heavy, send the help message to your senior contact.",
+    ],
+  };
+}
+
+function buildExtremePersonalPlan(input: GenerateReliefPlanInput): ReliefPlanResult {
+  const recipientName = input.recipientName || "team lead";
+  const explanationSnippet = toExplanationSnippet(input.userExplanation.trim());
+  return {
+    summary:
+      "This sounds like a serious personal situation. Your first priority is to inform your senior contact so workload expectations can be adjusted immediately.",
+    firstAction: `Send a direct note to ${recipientName} now saying you are dealing with a personal emergency and need immediate flexibility.`,
+    helpMessage: `Hi ${recipientName}, I need to flag a serious personal emergency and may not be able to continue "${input.ticketTitle}" right now. ${explanationSnippet} Could you please help re-prioritize or reassign this for the current block? I will share a clearer update as soon as possible.`,
+    optionalNextSteps: [
+      "After sending the note, pause work and focus on immediate personal priorities.",
     ],
   };
 }
@@ -370,4 +393,24 @@ function trimSentence(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= 180) return normalized;
   return `${normalized.slice(0, 177).trim()}...`;
+}
+
+function isExtremePersonalContext(cause: JiraReliefCause, explanation: string): boolean {
+  if (cause !== "personal") return false;
+  const lower = explanation.toLowerCase();
+  return [
+    "passed away",
+    "death",
+    "bereavement",
+    "funeral",
+    "hospital",
+    "hospitalized",
+    "er",
+    "emergency",
+    "crisis",
+    "accident",
+    "icu",
+    "critical condition",
+    "grief",
+  ].some((token) => lower.includes(token));
 }

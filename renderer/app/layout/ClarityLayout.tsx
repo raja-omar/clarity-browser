@@ -78,6 +78,8 @@ interface ClarityLayoutProps {
   dueSoonReminder?: DueSoonReminder;
   dueSoonReminderOpen: boolean;
   onCloseDueSoonReminder: () => void;
+  onSnoozeDueSoonReminder: () => void;
+  onMarkHandledDueSoonReminder: () => void;
   onOpenCoach: (context: CoachContextPayload) => void;
   onUpdateMeetingSupport: (
     payload: import("../../types").UpdateMeetingSupportInput,
@@ -142,6 +144,8 @@ export function ClarityLayout({
   dueSoonReminder,
   dueSoonReminderOpen,
   onCloseDueSoonReminder,
+  onSnoozeDueSoonReminder,
+  onMarkHandledDueSoonReminder,
   onOpenCoach,
   onUpdateMeetingSupport,
   onTriggerTestTaskPopup,
@@ -297,10 +301,11 @@ export function ClarityLayout({
         reminder={dueSoonReminder}
         open={dueSoonReminderOpen}
         onClose={onCloseDueSoonReminder}
+        onSnooze={onSnoozeDueSoonReminder}
+        onMarkHandled={onMarkHandledDueSoonReminder}
         onOpenCoach={onOpenCoach}
         onUpdateMeetingSupport={onUpdateMeetingSupport}
       />
-
       <div
         className="fixed bottom-5 left-5 z-[81] rounded-xl border border-white/10 bg-slate-950/90 p-2 backdrop-blur"
         style={{ width: sidebarCollapsed ? 64 : 260 }}

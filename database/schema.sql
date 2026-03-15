@@ -36,7 +36,10 @@ CREATE TABLE IF NOT EXISTS meetings (
   travel_time_minutes INTEGER DEFAULT 0,
   host_name TEXT,
   host_contact TEXT,
-  host_preferred_channel TEXT
+  host_preferred_channel TEXT,
+  prep_checklist_json TEXT,
+  reschedule_reason TEXT,
+  reschedule_email_draft TEXT
 );
 
 CREATE TABLE IF NOT EXISTS energy_logs (
@@ -64,4 +67,20 @@ CREATE TABLE IF NOT EXISTS jira_settings (
   email TEXT NOT NULL,
   encrypted_token BLOB NOT NULL,
   jql TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS overwhelm_sessions (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  item_type TEXT,
+  item_id TEXT,
+  context_json TEXT NOT NULL,
+  feeling TEXT NOT NULL,
+  urgency TEXT NOT NULL,
+  cause TEXT,
+  constraints TEXT,
+  plan_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );

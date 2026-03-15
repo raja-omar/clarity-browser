@@ -10,6 +10,8 @@ import type {
   JiraSettings,
   Meeting,
   MeetingPrepItem,
+  OverwhelmSession,
+  SaveOverwhelmSessionInput,
   Task,
   TaskSubtask,
   TaskStatus,
@@ -91,6 +93,22 @@ const SCHEMA_SQL = `
     email TEXT NOT NULL,
     encrypted_token BLOB NOT NULL,
     jql TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS overwhelm_sessions (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    item_type TEXT,
+    item_id TEXT,
+    context_json TEXT NOT NULL,
+    feeling TEXT NOT NULL,
+    urgency TEXT NOT NULL,
+    cause TEXT,
+    constraints TEXT,
+    plan_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
   );
 `;
 
@@ -190,6 +208,24 @@ function applyBackwardCompatibleMigrations(db: DatabaseClient): void {
       email TEXT NOT NULL,
       encrypted_token BLOB NOT NULL,
       jql TEXT NOT NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS overwhelm_sessions (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      item_type TEXT,
+      item_id TEXT,
+      context_json TEXT NOT NULL,
+      feeling TEXT NOT NULL,
+      urgency TEXT NOT NULL,
+      cause TEXT,
+      constraints TEXT,
+      plan_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
   `);
 }
@@ -591,6 +627,129 @@ export function updateMeetingSupport(
     | undefined;
 
   return row ? toMeeting(row) : undefined;
+}
+
+export function saveOverwhelmSession(
+  db: DatabaseClient,
+  payload: SaveOverwhelmSessionInput,
+): OverwhelmSession {
+  const now = new Date().toISOString();
+  const id = `overwhelm-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const urgency = payload.urgency ?? "medium";
+  db.prepare(`
+    INSERT INTO overwhelm_sessions (
+      id,
+      source,
+      item_type,
+      item_id,
+      context_json,
+      feeling,
+      urgency,
+      cause,
+      constraints,
+      plan_json,
+      status,
+      created_at,
+      updated_at
+    ) VALUES (
+      @id,
+      @source,
+      @itemType,
+      @itemId,
+      @contextJson,
+      @feeling,
+      @urgency,
+      @cause,
+      @constraints,
+      @planJson,
+      @status,
+      @createdAt,
+      @updatedAt
+    )
+  `).run({
+    id,
+    source: payload.source,
+    itemType: payload.itemType ?? null,
+    itemId: payload.itemId ?? null,
+    contextJson: JSON.stringify(payload.context),
+    feeling: payload.feeling,
+    urgency,
+    cause: payload.cause ?? null,
+    constraints: payload.constraints?.trim() || null,
+    planJson: JSON.stringify(payload.plan),
+    status: payload.status,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return {
+    ...payload,
+    urgency,
+    id,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function listOverwhelmSessions(db: DatabaseClient, limit = 20): OverwhelmSession[] {
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        id,
+        source,
+        item_type as itemType,
+        item_id as itemId,
+        context_json as contextJson,
+        feeling,
+        urgency,
+        cause,
+        constraints,
+        plan_json as planJson,
+        status,
+        created_at as createdAt,
+        updated_at as updatedAt
+      FROM overwhelm_sessions
+      ORDER BY updated_at DESC
+      LIMIT @limit
+    `,
+    )
+    .all({ limit }) as Array<{
+    id: string;
+    source: OverwhelmSession["source"];
+    itemType?: OverwhelmSession["itemType"];
+    itemId?: string;
+    contextJson: string;
+    feeling: OverwhelmSession["feeling"];
+    urgency: OverwhelmSession["urgency"];
+    cause?: OverwhelmSession["cause"];
+    constraints?: string;
+    planJson: string;
+    status: OverwhelmSession["status"];
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  return rows.flatMap((row) => {
+    const context = safeParseObject(row.contextJson);
+    const plan = safeParseObject(row.planJson);
+    if (!context || !plan) return [];
+    return [
+      {
+        id: row.id,
+        source: row.source,
+        itemType: row.itemType,
+        itemId: row.itemId,
+        context: context as unknown as OverwhelmSession["context"],
+        feeling: row.feeling,
+        urgency: row.urgency,
+        cause: row.cause,
+        constraints: row.constraints,
+        plan: plan as unknown as OverwhelmSession["plan"],
+        status: row.status,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      },
+    ];
+  });
 }
 
 export function getAllTasks(db: DatabaseClient): Task[] {
@@ -1070,6 +1229,17 @@ function safeParseMeetingPrepItems(value?: string): MeetingPrepItem[] {
       .filter((item): item is MeetingPrepItem => Boolean(item));
   } catch {
     return [];
+  }
+}
+
+function safeParseObject(value?: string): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object") return undefined;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return undefined;
   }
 }
 

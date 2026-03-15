@@ -5,9 +5,12 @@ export type TaskType = "focus" | "relax" | "collaborate";
 export type MeetingType = "static" | "dynamic" | "optional";
 export type HostPreferredChannel = "chat" | "email" | "slack";
 export type CoachChatRole = "system" | "user" | "assistant";
-export type CoachMode = "chat" | "action_cards";
+export type CoachMode = "chat" | "action_cards" | "overwhelm_flow";
 export type CoachActionKind = "do_next" | "micro_steps" | "smart_deferral";
-export type OverloadFeeling = "onTrack" | "overwhelmed" | "unwell" | "blocked";
+export type OverloadFeeling = "onTrack" | "overwhelmed";
+export type OverwhelmUrgency = "low" | "medium" | "high";
+export type OverwhelmCause = "work" | "personal";
+export type OverwhelmStatus = "open" | "done" | "dismissed" | "snoozed";
 
 export interface UserPreferences {
   sleepPattern: "regular" | "irregular";
@@ -198,6 +201,64 @@ export interface CoachActionCard {
   confidence?: number;
 }
 
+export interface OverwhelmContextPayload {
+  source: "meeting" | "task" | "general";
+  itemId?: string;
+  itemType?: "meeting" | "task";
+  itemTitle: string;
+  itemSummary: string;
+  dueAt?: string;
+  ownerName?: string;
+  hostName?: string;
+  suggestedDraftRecipient?: string;
+}
+
+export interface OverwhelmPlanStep {
+  id: string;
+  title: string;
+  rationale: string;
+  minutes: number;
+  steps: string[];
+  priority: "primary" | "backup";
+}
+
+export interface OverwhelmCommunicationDraft {
+  title: string;
+  recipient: string;
+  message: string;
+}
+
+export interface OverwhelmPlan {
+  summary: string;
+  immediateAction: OverwhelmPlanStep;
+  backupActions: OverwhelmPlanStep[];
+  communicationDraft: OverwhelmCommunicationDraft;
+}
+
+export interface OverwhelmFlowResponse {
+  plan: OverwhelmPlan;
+  usedFallback: boolean;
+}
+
+export interface SaveOverwhelmSessionInput {
+  source: OverwhelmContextPayload["source"];
+  itemType?: OverwhelmContextPayload["itemType"];
+  itemId?: string;
+  context: OverwhelmContextPayload;
+  feeling: OverloadFeeling;
+  urgency?: OverwhelmUrgency;
+  cause?: OverwhelmCause;
+  constraints?: string;
+  plan: OverwhelmPlan;
+  status: OverwhelmStatus;
+}
+
+export interface OverwhelmSession extends SaveOverwhelmSessionInput {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CoachResponseMetrics {
   mode: CoachMode;
   generatedAt: string;
@@ -213,10 +274,18 @@ export interface CoachChatRequest {
   messages: CoachChatMessage[];
   context?: CoachContextPayload;
   mode?: CoachMode;
+  overwhelm?: {
+    context: OverwhelmContextPayload;
+    feeling: OverloadFeeling;
+    urgency?: OverwhelmUrgency;
+    cause?: OverwhelmCause;
+    constraints?: string;
+  };
 }
 
 export interface CoachChatResponse {
   reply: string;
   actions?: CoachActionCard[];
   metrics?: CoachResponseMetrics;
+  overwhelmPlan?: OverwhelmPlan;
 }

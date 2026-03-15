@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Bot, LoaderCircle, Mail, X } from "lucide-react";
-import { trackCoachMetric } from "../../lib/coachMetrics";
+import { LoaderCircle, X } from "lucide-react";
 import type {
-  CoachActionCard,
-  CoachContextPayload,
   CreateMeetingInput,
   HostPreferredChannel,
   MeetingType,
 } from "../../types";
+import { UnifiedOverwhelmFlow } from "../overwhelm/UnifiedOverwhelmFlow";
+import { buildOverwhelmContextFromMeetingDraft } from "../overwhelm/buildOverwhelmContext";
 
 interface AddMeetingModalProps {
   open: boolean;
@@ -62,11 +61,6 @@ export function AddMeetingModal({ open, onOpenChange, onSubmit }: AddMeetingModa
   const [hostContact, setHostContact] = useState("");
   const [hostPreferredChannel, setHostPreferredChannel] = useState<HostPreferredChannel>("chat");
   const [saving, setSaving] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | undefined>(undefined);
-  const [aiCards, setAiCards] = useState<CoachActionCard[]>([]);
-  const [aiDraft, setAiDraft] = useState("");
-  const [draftCopied, setDraftCopied] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -85,11 +79,6 @@ export function AddMeetingModal({ open, onOpenChange, onSubmit }: AddMeetingModa
       setHostContact("");
       setHostPreferredChannel("chat");
       setSaving(false);
-      setAiLoading(false);
-      setAiError(undefined);
-      setAiCards([]);
-      setAiDraft("");
-      setDraftCopied(false);
     }
   }, [open]);
 
@@ -127,81 +116,11 @@ export function AddMeetingModal({ open, onOpenChange, onSubmit }: AddMeetingModa
     }
   }
 
-  async function requestActionCards(feeling: CoachContextPayload["feeling"]): Promise<void> {
-    if (aiLoading) return;
-    const context = buildMeetingCoachContext({
-      title,
-      description,
-      start,
-      hostName,
-      hostContact,
-      attendeesText,
-      feeling,
-    });
-    const fallbackCards = buildMeetingFallbackCards(context);
-    trackCoachMetric("action_cards_requested", {
-      source: "add_meeting_modal",
-      feeling,
-      hasTitle: Boolean(title.trim()),
-    });
-    if (!window.clarity?.chatWithCoach) {
-      setAiCards(fallbackCards);
-      setAiError("Using fallback suggestions while AI bridge is unavailable.");
-      return;
-    }
-    setAiLoading(true);
-    setAiError(undefined);
-    try {
-      const response = await window.clarity.chatWithCoach({
-        mode: "action_cards",
-        context,
-        messages: [{ role: "user", content: "Generate practical action cards for this meeting draft." }],
-      });
-      const cards = response.actions?.slice(0, 3) ?? fallbackCards;
-      setAiCards(cards);
-      const usedFallback = response.metrics?.usedFallback || !response.actions || response.actions.length === 0;
-      if (usedFallback) {
-        trackCoachMetric("action_card_fallback_used", { source: "add_meeting_modal" });
-      }
-      trackCoachMetric("action_cards_generated", {
-        source: "add_meeting_modal",
-        actionCount: cards.length,
-        usedFallback,
-      });
-    } catch {
-      setAiCards(fallbackCards);
-      setAiError("AI was unavailable, so practical fallback actions were generated.");
-      trackCoachMetric("action_card_fallback_used", { source: "add_meeting_modal", reason: "request_error" });
-    } finally {
-      setAiLoading(false);
-    }
-  }
-
-  function applyActionCard(card: CoachActionCard): void {
-    if (card.kind === "do_next") {
-      const firstStep = card.steps?.[0] ?? card.title;
-      setDescription((current) =>
-        current.trim() ? `${current.trim()}\n\nPrep step: ${firstStep}` : `Prep step: ${firstStep}`,
-      );
-    }
-    if (card.kind === "smart_deferral" && card.draftMessage) {
-      setAiDraft(card.draftMessage);
-    }
-    trackCoachMetric("action_card_applied", {
-      source: "add_meeting_modal",
-      kind: card.kind,
-    });
-  }
-
-  async function copyDraft(): Promise<void> {
-    if (!aiDraft) return;
-    try {
-      await navigator.clipboard.writeText(aiDraft);
-      setDraftCopied(true);
-      setTimeout(() => setDraftCopied(false), 1200);
-    } catch {
-      setDraftCopied(false);
-    }
+  function applyOverwhelmPlan(plan: { immediateAction: { steps: string[]; title: string } }): void {
+    const firstStep = plan.immediateAction.steps[0] ?? plan.immediateAction.title;
+    setDescription((current) =>
+      current.trim() ? `${current.trim()}\n\nImmediate prep step: ${firstStep}` : `Immediate prep step: ${firstStep}`,
+    );
   }
 
   return (
@@ -241,52 +160,16 @@ export function AddMeetingModal({ open, onOpenChange, onSubmit }: AddMeetingModa
                 />
               </label>
 
-              <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-3">
-                <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-indigo-200/90">
-                  <Bot className="h-3.5 w-3.5" />
-                  AI overwhelm relief
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void requestActionCards("overwhelmed")}
-                    disabled={aiLoading}
-                    className="rounded-lg border border-indigo-400/25 bg-indigo-500/15 px-2.5 py-1.5 text-xs text-indigo-100 transition hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Do this next
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void requestActionCards("unwell")}
-                    disabled={aiLoading}
-                    className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-100 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Smart deferral draft
-                  </button>
-                </div>
-                {aiLoading && (
-                  <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-300">
-                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    Generating action cards...
-                  </p>
-                )}
-                {aiError && <p className="mt-2 text-xs text-amber-200/90">{aiError}</p>}
-                {aiCards.length > 0 && (
-                  <div className="mt-2 space-y-2">
-                    {aiCards.map((card) => (
-                      <button
-                        key={card.id}
-                        type="button"
-                        onClick={() => applyActionCard(card)}
-                        className="block w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left transition hover:bg-white/[0.06]"
-                      >
-                        <p className="text-xs font-medium text-slate-100">{card.title}</p>
-                        <p className="mt-1 text-[11px] text-slate-400">{card.rationale}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <UnifiedOverwhelmFlow
+                context={buildOverwhelmContextFromMeetingDraft({
+                  title,
+                  description,
+                  start,
+                  hostName,
+                  attendeesText,
+                })}
+                onApplyPlan={applyOverwhelmPlan}
+              />
 
               <div className="grid grid-cols-3 gap-3">
                 <label className="block">
@@ -358,25 +241,6 @@ export function AddMeetingModal({ open, onOpenChange, onSubmit }: AddMeetingModa
                   />
                 </label>
               </div>
-
-              {aiDraft && (
-                <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                    Deferral draft
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-200">{aiDraft}</p>
-                  <button
-                    type="button"
-                    onClick={() => void copyDraft()}
-                    className="mt-2 rounded-lg border border-white/15 bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-white/[0.07]"
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <Mail className="h-3.5 w-3.5" />
-                      {draftCopied ? "Copied" : "Copy draft"}
-                    </span>
-                  </button>
-                </div>
-              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
@@ -487,73 +351,3 @@ export function AddMeetingModal({ open, onOpenChange, onSubmit }: AddMeetingModa
   );
 }
 
-function buildMeetingCoachContext(input: {
-  title: string;
-  description: string;
-  start: string;
-  hostName: string;
-  hostContact: string;
-  attendeesText: string;
-  feeling: CoachContextPayload["feeling"];
-}): CoachContextPayload {
-  const title = input.title.trim() || "Untitled meeting";
-  const attendeeCount = input.attendeesText
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean).length;
-  const dueAt = input.start ? new Date(input.start).toISOString() : undefined;
-  return {
-    source: "meeting",
-    title,
-    summary: `Draft meeting. Attendees: ${attendeeCount}. Host: ${input.hostName || "unknown"}.`,
-    feeling: input.feeling,
-    dueAt,
-    hostName: input.hostName.trim() || undefined,
-    draftMessage:
-      input.hostName.trim() || input.hostContact.trim()
-        ? `Hi ${input.hostName.trim() || "there"}, I may need to adjust "${title}" and share my update async. Could we align on the best option?`
-        : undefined,
-    suggestedPrompts: [
-      "Give one next prep step before this meeting.",
-      "Draft a concise reschedule or async-summary request.",
-      "Suggest a low-stress participation plan.",
-    ],
-  };
-}
-
-function buildMeetingFallbackCards(context: CoachContextPayload): CoachActionCard[] {
-  const title = context.title;
-  const host = context.hostName || "the host";
-  return [
-    {
-      id: "meeting-fallback-do-next",
-      kind: "do_next",
-      title: `Prep one objective for "${title}"`,
-      rationale: "One objective prevents cognitive overload during the call.",
-      steps: ["Write one must-decide question.", "Draft one update sentence.", "Bring both to the opening."],
-      minutes: 10,
-      ctaLabel: "Use prep step",
-      confidence: 0.73,
-    },
-    {
-      id: "meeting-fallback-micro-steps",
-      kind: "micro_steps",
-      title: "Use a 3-step meeting plan",
-      rationale: "Simple structure keeps attention anchored.",
-      steps: ["Open with your status.", "Ask for decision on blocker.", "Confirm owner and next date."],
-      ctaLabel: "Use meeting steps",
-      confidence: 0.7,
-    },
-    {
-      id: "meeting-fallback-deferral",
-      kind: "smart_deferral",
-      title: "Send a smart deferral",
-      rationale: "Explicit communication reduces last-minute stress.",
-      draftMessage:
-        context.draftMessage ||
-        `Hi ${host}, I am currently overloaded and want to avoid a rushed meeting for "${title}". Could we move it or share async updates first and regroup with clear action items?`,
-      ctaLabel: "Use draft",
-      confidence: 0.77,
-    },
-  ];
-}

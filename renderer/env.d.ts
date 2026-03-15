@@ -8,6 +8,8 @@ import type {
   EnergyLog,
   JiraSettings,
   Meeting,
+  OverwhelmSession,
+  SaveOverwhelmSessionInput,
   Task,
   TaskStatus,
   UpdateMeetingSupportInput,
@@ -33,6 +35,8 @@ declare global {
       saveOpenAIApiKey: (apiKey: string) => Promise<{ saved: boolean }>;
       chatWithCoach: (payload: CoachChatRequest) => Promise<CoachChatResponse>;
       hasOpenAIKey: () => Promise<{ configured: boolean }>;
+      saveOverwhelmSession: (payload: SaveOverwhelmSessionInput) => Promise<OverwhelmSession>;
+      listOverwhelmSessions: (limit?: number) => Promise<OverwhelmSession[]>;
     };
   }
 

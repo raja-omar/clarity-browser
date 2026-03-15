@@ -8,9 +8,11 @@ import {
   createDatabase,
   getBootstrap,
   saveJiraSettings,
+  saveOverwhelmSession,
   saveUserPreferences,
   saveEnergyLog,
   type DatabaseClient,
+  listOverwhelmSessions,
   updateMeetingSupport,
   updateTaskStatus,
   upsertJiraTasks,
@@ -23,6 +25,7 @@ import type {
   JiraSettings,
   UpdateMeetingSupportInput,
   UserPreferences,
+  SaveOverwhelmSessionInput,
 } from "../renderer/types";
 import { createMainWindow } from "./windowManager";
 
@@ -131,6 +134,14 @@ function registerIpc(): void {
 
   ipcMain.handle("clarity:has-openai-key", () =>
     hasConfiguredOpenAIKey(app.getPath("userData")),
+  );
+
+  ipcMain.handle("clarity:save-overwhelm-session", (_event, payload: SaveOverwhelmSessionInput) =>
+    saveOverwhelmSession(getDatabase(), payload),
+  );
+
+  ipcMain.handle("clarity:list-overwhelm-sessions", (_event, limit?: number) =>
+    listOverwhelmSessions(getDatabase(), limit),
   );
 }
 

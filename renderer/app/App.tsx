@@ -139,48 +139,6 @@ export default function App() {
     }
   }, [loading, userPreferences]);
 
-  // DEV AUTO-TEST: Fire a Jira notification 3 seconds after app loads
-  useEffect(() => {
-    if (loading) return;
-    console.log("[AUTO-TEST] App loaded, scheduling Jira popup in 3s...");
-    const timer = setTimeout(() => {
-      console.log("[AUTO-TEST] Firing Jira popup NOW");
-      setPersonalizationOpen(false);
-      setMorningBriefOpen(false);
-      const dueIso = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-      setDueSoonReminder({
-        key: `task:autotest-jira:10`,
-        itemType: "task",
-        slotMinutes: 10,
-        dueAt: dueIso,
-        task: {
-          id: "autotest-jira",
-          title: "Investigate API timeout failures",
-          estimate: 40,
-          estimatedTimeMinutes: 40,
-          energy: "high",
-          source: "jira",
-          status: "todo",
-          priority: "high",
-          dueAt: dueIso,
-          deadline: dueIso,
-          description: "Investigate recurring API timeout failures in the request pipeline. Review logs, recent deployment changes, and failing test configurations.",
-          ownerName: "Jane Smith",
-          ownerContact: "jane.smith@example.com",
-          escalationContact: "eng-manager@example.com",
-          subtasks: [
-            { id: "autotest-sub-1", title: "Capture failing request logs", done: false },
-            { id: "autotest-sub-2", title: "Propose fix and review with owner", done: false },
-          ],
-          type: "focus",
-          jiraKey: "PROJ-1234",
-          jiraUrl: "https://example.atlassian.net/browse/PROJ-1234",
-        },
-      });
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [loading]);
-
   useEffect(() => {
     if (loading) return;
 
@@ -245,6 +203,7 @@ export default function App() {
         if (taskDrawerOpen) setTaskDrawerOpen(false);
         if (calendarDrawerOpen) setCalendarDrawerOpen(false);
         if (contextDrawerOpen) setContextDrawerOpen(false);
+        if (dueSoonReminder) setDueSoonReminder(undefined);
       }
     };
 
@@ -253,6 +212,7 @@ export default function App() {
   }, [
     calendarDrawerOpen,
     contextDrawerOpen,
+    dueSoonReminder,
     setCalendarDrawerOpen,
     setCommandPaletteOpen,
     setContextDrawerOpen,
@@ -329,7 +289,22 @@ export default function App() {
     openCoachTab(context);
   }
 
-  // DEV ONLY: Triggers a sample Jira popup for manual testing of the relief flow.
+  function handleSnoozeDueSoonReminder(): void {
+    if (!dueSoonReminder) return;
+    const snoozed = {
+      ...dueSoonReminder,
+      key: `${dueSoonReminder.key}:snooze:${Date.now()}`,
+      dueAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      slotMinutes: 10,
+    };
+    setDueSoonReminder(undefined);
+    setPendingReminders((current) => [snoozed, ...current]);
+  }
+
+  function handleMarkHandledDueSoonReminder(): void {
+    setDueSoonReminder(undefined);
+  }
+
   function handleTriggerTestTaskPopup(): void {
     const now = Date.now();
     const dueIso = new Date(now + 10 * 60 * 1000).toISOString();
@@ -447,6 +422,8 @@ export default function App() {
         dueSoonReminder={dueSoonReminder}
         dueSoonReminderOpen={Boolean(dueSoonReminder)}
         onCloseDueSoonReminder={() => setDueSoonReminder(undefined)}
+        onSnoozeDueSoonReminder={handleSnoozeDueSoonReminder}
+        onMarkHandledDueSoonReminder={handleMarkHandledDueSoonReminder}
         onOpenCoach={handleOpenCoach}
         onUpdateMeetingSupport={handleUpdateMeetingSupport}
         onTriggerTestTaskPopup={handleTriggerTestTaskPopup}

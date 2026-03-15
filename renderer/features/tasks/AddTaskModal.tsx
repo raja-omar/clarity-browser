@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Bot, LoaderCircle, Mail, X } from "lucide-react";
-import { trackCoachMetric } from "../../lib/coachMetrics";
-import type { CoachActionCard, CoachContextPayload, CreateTaskInput, TaskType } from "../../types";
+import { LoaderCircle, X } from "lucide-react";
+import type { CreateTaskInput, TaskType } from "../../types";
+import { UnifiedOverwhelmFlow } from "../overwhelm/UnifiedOverwhelmFlow";
+import { buildOverwhelmContextFromTaskDraft } from "../overwhelm/buildOverwhelmContext";
 
 interface AddTaskModalProps {
   open: boolean;
@@ -28,11 +29,6 @@ export function AddTaskModal({ open, onOpenChange, onSubmit }: AddTaskModalProps
   const [escalationContact, setEscalationContact] = useState("");
   const [subtasksText, setSubtasksText] = useState("");
   const [saving, setSaving] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | undefined>(undefined);
-  const [aiDraft, setAiDraft] = useState("");
-  const [aiCards, setAiCards] = useState<CoachActionCard[]>([]);
-  const [draftCopied, setDraftCopied] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -47,11 +43,6 @@ export function AddTaskModal({ open, onOpenChange, onSubmit }: AddTaskModalProps
       setEscalationContact("");
       setSubtasksText("");
       setSaving(false);
-      setAiLoading(false);
-      setAiError(undefined);
-      setAiDraft("");
-      setAiCards([]);
-      setDraftCopied(false);
     }
   }, [open]);
 
@@ -88,89 +79,22 @@ export function AddTaskModal({ open, onOpenChange, onSubmit }: AddTaskModalProps
     }
   }
 
-  async function requestActionCards(feeling: CoachContextPayload["feeling"]): Promise<void> {
-    if (aiLoading) return;
-    const context = buildTaskCoachContext({
-      name,
-      description,
-      priority,
-      estimatedTimeMinutes,
-      ownerName,
-      ownerContact,
-      subtasksText,
-      feeling,
-    });
-    const fallbackCards = buildTaskFallbackCards(context);
-    trackCoachMetric("action_cards_requested", {
-      source: "add_task_modal",
-      feeling,
-      hasName: Boolean(name.trim()),
-      hasSubtasks: Boolean(subtasksText.trim()),
-    });
-    if (!window.clarity?.chatWithCoach) {
-      setAiCards(fallbackCards);
-      setAiError("Using fallback suggestions while AI bridge is unavailable.");
-      return;
-    }
-    setAiLoading(true);
-    setAiError(undefined);
-    try {
-      const response = await window.clarity.chatWithCoach({
-        mode: "action_cards",
-        context,
-        messages: [{ role: "user", content: "Generate practical action cards for this task draft." }],
-      });
-      const cards = response.actions?.slice(0, 3) ?? fallbackCards;
-      setAiCards(cards);
-      const usedFallback = response.metrics?.usedFallback || !response.actions || response.actions.length === 0;
-      if (usedFallback) {
-        trackCoachMetric("action_card_fallback_used", { source: "add_task_modal" });
-      }
-      trackCoachMetric("action_cards_generated", {
-        source: "add_task_modal",
-        actionCount: cards.length,
-        usedFallback,
-      });
-    } catch {
-      setAiCards(fallbackCards);
-      setAiError("AI was unavailable, so practical fallback actions were generated.");
-      trackCoachMetric("action_card_fallback_used", { source: "add_task_modal", reason: "request_error" });
-    } finally {
-      setAiLoading(false);
-    }
-  }
-
-  function applyActionCard(card: CoachActionCard): void {
-    if (card.kind === "micro_steps" && card.steps?.length) {
-      setSubtasksText(card.steps.join("\n"));
-    }
-    if (card.kind === "do_next") {
-      const firstStep = card.steps?.[0] ?? card.title;
-      const nextDescription = description.trim()
-        ? `${description.trim()}\n\nNext step: ${firstStep}`
-        : `Next step: ${firstStep}`;
-      setDescription(nextDescription);
-      if (card.minutes) {
-        setEstimatedTimeMinutes(Math.max(5, card.minutes));
-      }
-    }
-    if (card.kind === "smart_deferral" && card.draftMessage) {
-      setAiDraft(card.draftMessage);
-    }
-    trackCoachMetric("action_card_applied", {
-      source: "add_task_modal",
-      kind: card.kind,
-    });
-  }
-
-  async function copyDraft(): Promise<void> {
-    if (!aiDraft) return;
-    try {
-      await navigator.clipboard.writeText(aiDraft);
-      setDraftCopied(true);
-      setTimeout(() => setDraftCopied(false), 1200);
-    } catch {
-      setDraftCopied(false);
+  function applyOverwhelmPlan(plan: {
+    immediateAction: { title: string; steps: string[]; minutes: number };
+    backupActions: Array<{ steps: string[] }>;
+  }): void {
+    const firstStep = plan.immediateAction.steps[0] || plan.immediateAction.title;
+    const nextDescription = description.trim()
+      ? `${description.trim()}\n\nImmediate next step: ${firstStep}`
+      : `Immediate next step: ${firstStep}`;
+    setDescription(nextDescription);
+    setEstimatedTimeMinutes(Math.max(5, plan.immediateAction.minutes));
+    const allSteps = [...plan.immediateAction.steps, ...plan.backupActions.flatMap((action) => action.steps)].slice(
+      0,
+      5,
+    );
+    if (allSteps.length > 0) {
+      setSubtasksText(allSteps.join("\n"));
     }
   }
 
@@ -220,60 +144,17 @@ export function AddTaskModal({ open, onOpenChange, onSubmit }: AddTaskModalProps
                 />
               </label>
 
-              <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-3">
-                <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-indigo-200/90">
-                  <Bot className="h-3.5 w-3.5" />
-                  AI overwhelm relief
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void requestActionCards("overwhelmed")}
-                    disabled={aiLoading}
-                    className="rounded-lg border border-indigo-400/25 bg-indigo-500/15 px-2.5 py-1.5 text-xs text-indigo-100 transition hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Do this next
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void requestActionCards("blocked")}
-                    disabled={aiLoading}
-                    className="rounded-lg border border-white/15 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Break into 3 steps
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void requestActionCards("unwell")}
-                    disabled={aiLoading}
-                    className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-100 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Smart deferral draft
-                  </button>
-                </div>
-                {aiLoading && (
-                  <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-300">
-                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    Generating action cards...
-                  </p>
-                )}
-                {aiError && <p className="mt-2 text-xs text-amber-200/90">{aiError}</p>}
-                {aiCards.length > 0 && (
-                  <div className="mt-2 space-y-2">
-                    {aiCards.map((card) => (
-                      <button
-                        key={card.id}
-                        type="button"
-                        onClick={() => applyActionCard(card)}
-                        className="block w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left transition hover:bg-white/[0.06]"
-                      >
-                        <p className="text-xs font-medium text-slate-100">{card.title}</p>
-                        <p className="mt-1 text-[11px] text-slate-400">{card.rationale}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <UnifiedOverwhelmFlow
+                context={buildOverwhelmContextFromTaskDraft({
+                  name,
+                  description,
+                  priority,
+                  estimatedTimeMinutes,
+                  ownerName,
+                  subtasksText,
+                })}
+                onApplyPlan={applyOverwhelmPlan}
+              />
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
@@ -336,25 +217,6 @@ export function AddTaskModal({ open, onOpenChange, onSubmit }: AddTaskModalProps
                   className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-indigo-400/40"
                 />
               </label>
-
-              {aiDraft && (
-                <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                    Deferral draft
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-200">{aiDraft}</p>
-                  <button
-                    type="button"
-                    onClick={() => void copyDraft()}
-                    className="mt-2 rounded-lg border border-white/15 bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-white/[0.07]"
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <Mail className="h-3.5 w-3.5" />
-                      {draftCopied ? "Copied" : "Copy draft"}
-                    </span>
-                  </button>
-                </div>
-              )}
 
               <label className="block">
                 <span className="mb-1.5 block text-xs text-slate-400">
@@ -423,77 +285,3 @@ export function AddTaskModal({ open, onOpenChange, onSubmit }: AddTaskModalProps
   );
 }
 
-function buildTaskCoachContext(input: {
-  name: string;
-  description: string;
-  priority: CreateTaskInput["priority"];
-  estimatedTimeMinutes: number;
-  ownerName: string;
-  ownerContact: string;
-  subtasksText: string;
-  feeling: CoachContextPayload["feeling"];
-}): CoachContextPayload {
-  const lines = input.subtasksText
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const title = input.name.trim() || "Untitled task";
-  return {
-    source: "task",
-    title,
-    summary: `Draft task. Priority: ${input.priority}. Estimated minutes: ${input.estimatedTimeMinutes}. Existing subtasks: ${lines.length}.`,
-    feeling: input.feeling,
-    ownerName: input.ownerName.trim() || undefined,
-    incompleteSubtaskCount: lines.length,
-    draftMessage:
-      input.ownerName.trim() || input.ownerContact.trim()
-        ? `Hi ${input.ownerName.trim() || "there"}, quick heads up on "${title}". I may need to adjust scope and will share a realistic delivery update shortly.`
-        : undefined,
-    suggestedPrompts: [
-      "Give me one next step I can complete in 10 minutes.",
-      "Break this into 3 practical subtasks.",
-      "Draft a concise deferral message with clear next commitment.",
-    ],
-  };
-}
-
-function buildTaskFallbackCards(context: CoachContextPayload): CoachActionCard[] {
-  const title = context.title;
-  const owner = context.ownerName || "the owner";
-  return [
-    {
-      id: "task-fallback-do-next",
-      kind: "do_next",
-      title: `Start "${title}" with one tiny slice`,
-      rationale: "A 10-minute start is usually enough to regain momentum.",
-      minutes: 10,
-      steps: [
-        "Define the smallest done condition.",
-        "Complete one visible output.",
-        "Send one-line status update.",
-      ],
-      ctaLabel: "Start now",
-      confidence: 0.72,
-    },
-    {
-      id: "task-fallback-micro-steps",
-      kind: "micro_steps",
-      title: `Break "${title}" into 3 steps`,
-      rationale: "Micro-steps make hard tasks feel tractable.",
-      steps: ["Clarify outcome.", "Do first 15-minute unit.", "Confirm next checkpoint."],
-      ctaLabel: "Use steps",
-      confidence: 0.71,
-    },
-    {
-      id: "task-fallback-deferral",
-      kind: "smart_deferral",
-      title: "Send a smart deferral",
-      rationale: "Explicit communication preserves trust under pressure.",
-      draftMessage:
-        context.draftMessage ||
-        `Hi ${owner}, I am currently overloaded and want to avoid low-quality delivery on "${title}". I can share a scoped update first, then complete the remainder in the next available block. Does that plan work?`,
-      ctaLabel: "Use draft",
-      confidence: 0.76,
-    },
-  ];
-}

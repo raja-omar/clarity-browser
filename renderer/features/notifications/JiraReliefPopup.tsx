@@ -17,7 +17,7 @@ interface JiraReliefPopupProps {
   onClose: () => void;
 }
 
-interface HardcodedJiraTicket {
+interface JiraTicketContext {
   id: string;
   title: string;
   description: string;
@@ -26,13 +26,10 @@ interface HardcodedJiraTicket {
   assignee: string;
 }
 
-const HARDCODED_JIRA_DESCRIPTION =
-  "Investigate recurring API timeout failures in the AWS-backed request pipeline. Identify root cause, determine whether the issue is caused by retry exhaustion, downstream latency, or failing test configuration, and propose a fix or mitigation. Review logs, failing tests, and recent deployment changes.";
-
 const ON_TRACK_ACTIONS = ["Define next step", "Post quick progress update"];
 
 export function JiraReliefPopup({ reminder, open, onClose }: JiraReliefPopupProps) {
-  const ticket = useMemo(() => buildHardcodedJiraTicket(reminder), [reminder]);
+  const ticket = useMemo(() => buildJiraTicketContext(reminder), [reminder]);
   const [currentStep, setCurrentStep] = useState<JiraFlowStep>("feeling");
   const [selectedFeeling, setSelectedFeeling] = useState<JiraReliefFeeling | undefined>(undefined);
   const [overwhelmCause, setOverwhelmCause] = useState<JiraReliefCause | undefined>(undefined);
@@ -66,6 +63,7 @@ export function JiraReliefPopup({ reminder, open, onClose }: JiraReliefPopupProp
         feeling: selectedFeeling,
         cause: overwhelmCause,
         userExplanation: userContextInput,
+        recipientName: reminder.task?.escalationContact || reminder.task?.ownerName,
       });
       setAiResult(result);
       setCurrentStep("result");
@@ -495,15 +493,15 @@ function InlineActionState({ action }: { action?: string }) {
   );
 }
 
-function buildHardcodedJiraTicket(reminder: DueSoonReminder): HardcodedJiraTicket {
+function buildJiraTicketContext(reminder: DueSoonReminder): JiraTicketContext {
   const task = reminder.task;
   return {
-    id: task?.jiraKey || task?.id || "jira-demo-1",
-    title: task?.title || "Investigate API timeout failures",
-    description: HARDCODED_JIRA_DESCRIPTION,
+    id: task?.jiraKey || task?.id || "unknown",
+    title: task?.title || "Untitled Jira ticket",
+    description: task?.description || task?.notes || "No description available.",
     dueDate: reminder.dueAt,
-    priority: task?.priority || "high",
-    assignee: task?.ownerName || "Mina",
+    priority: task?.priority || "medium",
+    assignee: task?.ownerName || "your team lead",
   };
 }
 

@@ -7,6 +7,7 @@ export interface GenerateReliefPlanInput {
   feeling: JiraReliefFeeling;
   cause: JiraReliefCause;
   userExplanation: string;
+  recipientName?: string;
 }
 
 export interface ReliefPlanResult {
@@ -63,7 +64,8 @@ async function tryGenerateReliefPlanWithCoach(
 }
 
 function buildReliefPlanPrompt(input: GenerateReliefPlanInput): string {
-  const recipient =
+  const recipientName = input.recipientName || "team lead";
+  const recipientRole =
     input.cause === "work" ? "a senior engineer who can unblock the ticket" : "a manager or senior engineer";
 
   return `You are Clarity AI Coach helping with a Jira ticket popup.
@@ -73,11 +75,12 @@ Ticket description: ${input.ticketDescription}
 Feeling: ${input.feeling}
 Cause: ${input.cause}
 User explanation: ${input.userExplanation}
+Recipient name: ${recipientName}
 
 Your job:
 - Understand the specific blocker from the user's explanation.
 - Give a personalized first action that is concrete and immediately useful.
-- Write a short realistic workplace message to ${recipient}.
+- Write a short realistic workplace message to ${recipientName} (${recipientRole}).
 - Keep the tone supportive, practical, and calm.
 - Do not sound generic or robotic.
 
@@ -153,6 +156,7 @@ function buildFallbackPlan(input: GenerateReliefPlanInput): ReliefPlanResult {
 
 function buildWorkPlan(input: GenerateReliefPlanInput): ReliefPlanResult {
   const explanation = input.userExplanation.trim();
+  const recipientName = input.recipientName || "team lead";
   const profile = detectWorkIssueProfile(explanation, input.ticketDescription);
   const summaryLead = buildWorkSummaryLead(profile.key);
   const checkedSummary =
@@ -164,13 +168,14 @@ function buildWorkPlan(input: GenerateReliefPlanInput): ReliefPlanResult {
   return {
     summary: `${summaryLead} ${checkedSummary}`,
     firstAction: profile.firstAction,
-    helpMessage: `Hey Mina, I’m working on "${input.ticketTitle}" and I’m currently blocked on ${profile.blockerLabel}. ${explanationSnippet} I’ve started narrowing it down, but I’m still unsure about ${profile.ask}. Would you be able to point me in the right direction when you have a moment?`,
+    helpMessage: `Hey ${recipientName}, I’m working on "${input.ticketTitle}" and I’m currently blocked on ${profile.blockerLabel}. ${explanationSnippet} I’ve started narrowing it down, but I’m still unsure about ${profile.ask}. Would you be able to point me in the right direction when you have a moment?`,
     optionalNextSteps: profile.optionalNextSteps,
   };
 }
 
 function buildPersonalPlan(input: GenerateReliefPlanInput): ReliefPlanResult {
   const explanation = input.userExplanation.trim();
+  const recipientName = input.recipientName || "team lead";
   const personalStep = buildPersonalFirstAction(explanation);
   const personalSummary = buildPersonalSummary(explanation);
   const supportAngle = buildPersonalSupportAngle(explanation);
@@ -179,7 +184,7 @@ function buildPersonalPlan(input: GenerateReliefPlanInput): ReliefPlanResult {
   return {
     summary: personalSummary,
     firstAction: personalStep,
-    helpMessage: `Hi Mina, I wanted to flag that I’m having a difficult moment today while working on "${input.ticketTitle}". ${explanationSnippet} I can still make progress, but I may need ${supportAngle}. If you have a moment, I’d appreciate help narrowing the immediate priority or adjusting expectations for the next block.`,
+    helpMessage: `Hi ${recipientName}, I wanted to flag that I’m having a difficult moment today while working on "${input.ticketTitle}". ${explanationSnippet} I can still make progress, but I may need ${supportAngle}. If you have a moment, I’d appreciate help narrowing the immediate priority or adjusting expectations for the next block.`,
     optionalNextSteps: [
       explanation ? `Keep the first step smaller than the whole issue: ${trimSentence(explanation)}.` : "Keep the first step smaller than the whole issue.",
       "Send the note early instead of waiting until the ticket feels worse.",

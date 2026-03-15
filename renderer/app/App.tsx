@@ -139,6 +139,48 @@ export default function App() {
     }
   }, [loading, userPreferences]);
 
+  // DEV AUTO-TEST: Fire a Jira notification 3 seconds after app loads
+  useEffect(() => {
+    if (loading) return;
+    console.log("[AUTO-TEST] App loaded, scheduling Jira popup in 3s...");
+    const timer = setTimeout(() => {
+      console.log("[AUTO-TEST] Firing Jira popup NOW");
+      setPersonalizationOpen(false);
+      setMorningBriefOpen(false);
+      const dueIso = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      setDueSoonReminder({
+        key: `task:autotest-jira:10`,
+        itemType: "task",
+        slotMinutes: 10,
+        dueAt: dueIso,
+        task: {
+          id: "autotest-jira",
+          title: "Investigate API timeout failures",
+          estimate: 40,
+          estimatedTimeMinutes: 40,
+          energy: "high",
+          source: "jira",
+          status: "todo",
+          priority: "high",
+          dueAt: dueIso,
+          deadline: dueIso,
+          description: "Investigate recurring API timeout failures in the request pipeline. Review logs, recent deployment changes, and failing test configurations.",
+          ownerName: "Jane Smith",
+          ownerContact: "jane.smith@example.com",
+          escalationContact: "eng-manager@example.com",
+          subtasks: [
+            { id: "autotest-sub-1", title: "Capture failing request logs", done: false },
+            { id: "autotest-sub-2", title: "Propose fix and review with owner", done: false },
+          ],
+          type: "focus",
+          jiraKey: "PROJ-1234",
+          jiraUrl: "https://example.atlassian.net/browse/PROJ-1234",
+        },
+      });
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   useEffect(() => {
     if (loading) return;
 
@@ -287,29 +329,31 @@ export default function App() {
     openCoachTab(context);
   }
 
+  // DEV ONLY: Triggers a sample Jira popup for manual testing of the relief flow.
   function handleTriggerTestTaskPopup(): void {
     const now = Date.now();
+    const dueIso = new Date(now + 10 * 60 * 1000).toISOString();
     setDueSoonReminder({
       key: `task:test-${now}:10`,
       itemType: "task",
       slotMinutes: 10,
-      dueAt: new Date(now + 10 * 60 * 1000).toISOString(),
+      dueAt: dueIso,
       task: {
         id: "test-task-popup",
-        title: "Test ticket: API timeout investigation",
+        title: "[DEV] Sample Jira ticket: API timeout investigation",
         estimate: 40,
         estimatedTimeMinutes: 40,
         energy: "high",
         source: "jira",
         status: "todo",
         priority: "high",
-        dueAt: new Date(now + 10 * 60 * 1000).toISOString(),
-        deadline: new Date(now + 10 * 60 * 1000).toISOString(),
+        dueAt: dueIso,
+        deadline: dueIso,
         description:
-          "Investigate recurring API timeout failures in the AWS-backed request pipeline. Identify root cause, determine whether the issue is caused by retry exhaustion, downstream latency, or failing test configuration, and propose a fix or mitigation. Review logs, failing tests, and recent deployment changes.",
-        ownerName: "Senior Dev Mina",
-        ownerContact: "@mina-dev",
-        escalationContact: "@eng-manager",
+          "Investigate recurring API timeout failures in the request pipeline. Identify root cause and propose a fix or mitigation.",
+        ownerName: "Jane Smith",
+        ownerContact: "jane.smith@example.com",
+        escalationContact: "eng-manager@example.com",
         subtasks: [
           { id: "test-sub-1", title: "Capture failing request logs", done: false },
           { id: "test-sub-2", title: "Propose fix and review with owner", done: false },

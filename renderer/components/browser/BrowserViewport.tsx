@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import type { BrowserTab, Task } from "../../types";
 import { CoachChatPane } from "../../features/ai/CoachChatPane";
+import { CalendarRecommendationsPane } from "../../features/ai/CalendarRecommendationsPane";
 
 export interface BrowserViewportHandle {
   goBack: () => void;
@@ -75,6 +76,8 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
         {activeTab ? (
           activeTab.context === "coach" ? (
             <CoachChatPane context={activeTab.coachContext} />
+          ) : activeTab.context === "calendar_recommendations" ? (
+            <CalendarRecommendationsPane data={activeTab.calendarRecommendationsData} />
           ) : (
             <webview
               ref={webviewRef}

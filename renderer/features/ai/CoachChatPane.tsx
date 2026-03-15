@@ -112,11 +112,6 @@ export function CoachChatPane({ context }: CoachChatPaneProps) {
           {context?.title ? `${context.title} support` : "Guidance chat"}
         </h2>
         {context?.summary && <p className="mt-1 text-xs text-slate-400">{context.summary}</p>}
-        {!checkingKey && hasConfiguredKey && (
-          <p className="mt-2 inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-200">
-            OpenAI key detected
-          </p>
-        )}
       </div>
 
       {!checkingKey && !hasConfiguredKey && (

@@ -6,10 +6,15 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   EnergyLog,
+  HealthCheckIn,
+  GoogleCalendarStatus,
+  GoogleCalendarSyncResult,
+  GoogleCalendarSyncWindow,
   JiraSettings,
   Meeting,
   OverwhelmSession,
   SaveOverwhelmSessionInput,
+  SaveHealthCheckInInput,
   Task,
   TaskStatus,
   UpdateMeetingSupportInput,
@@ -28,6 +33,8 @@ declare global {
       saveEnergyLog: (
         payload: Omit<EnergyLog, "id" | "timestamp">,
       ) => Promise<EnergyLog>;
+      saveHealthCheckIn: (payload: SaveHealthCheckInInput) => Promise<HealthCheckIn>;
+      listHealthCheckIns: (limit?: number) => Promise<HealthCheckIn[]>;
       openExternal: (url: string) => Promise<void>;
       saveJiraSettings: (settings: JiraSettings) => Promise<void>;
       getJiraSettings: () => Promise<Omit<JiraSettings, "token"> | null>;
@@ -35,6 +42,10 @@ declare global {
       saveOpenAIApiKey: (apiKey: string) => Promise<{ saved: boolean }>;
       chatWithCoach: (payload: CoachChatRequest) => Promise<CoachChatResponse>;
       hasOpenAIKey: () => Promise<{ configured: boolean }>;
+      getGoogleCalendarStatus: () => Promise<GoogleCalendarStatus>;
+      connectGoogleCalendar: () => Promise<GoogleCalendarStatus>;
+      disconnectGoogleCalendar: () => Promise<GoogleCalendarStatus>;
+      syncGoogleCalendar: (window: GoogleCalendarSyncWindow) => Promise<GoogleCalendarSyncResult>;
       saveOverwhelmSession: (payload: SaveOverwhelmSessionInput) => Promise<OverwhelmSession>;
       listOverwhelmSessions: (limit?: number) => Promise<OverwhelmSession[]>;
     };

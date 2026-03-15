@@ -2,15 +2,21 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { safeStorage } from "electron";
 import type {
+  CalendarRecommendationTaskInput,
+  CalendarRecommendationsResponse,
+  CalendarSuggestionAction,
   CoachActionCard,
   CoachActionKind,
   CoachChatMessage,
   CoachChatRequest,
   CoachChatResponse,
   CoachContextPayload,
+  HealthInterventionPlan,
   OverloadFeeling,
   OverwhelmContextPayload,
   OverwhelmPlan,
+  TaskRecommendationSuggestion,
+  TaskSuggestionAction,
   OverwhelmUrgency,
 } from "../renderer/types";
 
@@ -542,6 +548,412 @@ function fallbackOverwhelmPlan(input: {
   };
 }
 
+function buildCalendarRecommendationsPrompt(input: NonNullable<CoachChatRequest["calendarRecommendations"]>): string {
+  const meetings = input.meetings
+    .map((meeting, index) => {
+      return `#${index + 1}
+id: ${meeting.id}
+title: ${meeting.title}
+start: ${meeting.start}
+end: ${meeting.end}
+attendees: ${meeting.attendees}
+source: ${meeting.source ?? "unknown"}
+type: ${meeting.type ?? "unknown"}
+host: ${meeting.hostName ?? "unknown"}
+allDay: ${meeting.isAllDay ? "yes" : "no"}
+description: ${meeting.description ?? "none"}
+location: ${meeting.location ?? "none"}`;
+    })
+    .join("\n\n");
+  const tasks = input.tasks
+    .map((task, index) => {
+      return `#${index + 1}
+id: ${task.id}
+title: ${task.title}
+priority: ${task.priority}
+status: ${task.status}
+dueAt: ${task.dueAt ?? "none"}
+deadline: ${task.deadline ?? "none"}
+estimateMinutes: ${task.estimatedTimeMinutes ?? "unknown"}
+description: ${task.description ?? "none"}`;
+    })
+    .join("\n\n");
+
+  return `You are Clarity AI Calendar Triage.
+Analyze remaining meetings for today and suggest practical changes directly to the person.
+Also triage today's task list and suggest what to focus on versus defer.
+
+Current time: ${input.currentTime}
+Escalation trigger time: ${input.triggerTime}
+Reason cause: ${input.cause ?? "unknown"}
+Reason detail: ${input.reason?.trim() || "none provided"}
+Source item type: ${input.sourceItemType ?? "unknown"}
+Source item title: ${input.sourceItemTitle ?? "unknown"}
+
+Meetings to evaluate (all are upcoming for today):
+${meetings || "none"}
+
+Tasks to evaluate (incomplete tasks for today):
+${tasks || "none"}
+
+Return JSON only with this exact shape:
+{
+  "summary": "string",
+  "reasoningNote": "string",
+  "suggestions": [
+    {
+      "id": "s1",
+      "meetingId": "string",
+      "meetingTitle": "string",
+      "action": "keep|move|cancel|shorten",
+      "rationale": "string",
+      "confidence": 0.8,
+      "priorityScore": 80,
+      "keepFixed": false,
+      "communicationDraft": "string optional"
+    }
+  ],
+  "taskSuggestions": [
+    {
+      "id": "t1",
+      "taskId": "string",
+      "taskTitle": "string",
+      "action": "do_today|defer_today|trim_scope",
+      "rationale": "string",
+      "confidence": 0.8,
+      "priorityScore": 80
+    }
+  ]
+}
+
+Rules:
+- Safety first: if reason implies health/personal emergency, aggressively reduce load.
+- Keep likely mandatory meetings fixed (manager/senior host, many attendees, near-term critical).
+- Prefer changing low-priority, optional, high-energy, or solo activities before critical collaboration.
+- Do not suggest changes to meetings in the past.
+- Include 1 suggestion per input meeting.
+- Include 1 suggestion per input task.
+- confidence must be between 0 and 1.
+- priorityScore must be 1-100 where higher means stronger recommendation urgency.
+- If action is keep, set keepFixed=true.
+- For tasks, prefer recommending high-priority tasks as do_today and low-priority tasks as defer_today when constraints imply reduced capacity.
+- Keep wording calm, practical, and humane.
+- Speak directly to the person using "you" and "your".
+- Never use third-person labels like "the user" or "user's".
+- Return JSON only, no markdown.`;
+}
+
+function coerceCalendarAction(value: unknown): CalendarSuggestionAction | undefined {
+  if (value === "keep" || value === "move" || value === "cancel" || value === "shorten") {
+    return value;
+  }
+  return undefined;
+}
+
+function coerceTaskAction(value: unknown): TaskSuggestionAction | undefined {
+  if (value === "do_today" || value === "defer_today" || value === "trim_scope") {
+    return value;
+  }
+  return undefined;
+}
+
+function parseIsoOrUndefined(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const date = new Date(trimmed);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function parseCalendarRecommendations(
+  raw: string,
+  scannedMeetings: number,
+  scannedTasks: number,
+): CalendarRecommendationsResponse | undefined {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
+    const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+    const reasoningNote = typeof parsed.reasoningNote === "string" ? parsed.reasoningNote.trim() : "";
+    const suggestionInput = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+    const suggestions: CalendarRecommendationsResponse["suggestions"] = [];
+    for (const [index, item] of suggestionInput.entries()) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+      const action = coerceCalendarAction(row.action);
+      const meetingId = typeof row.meetingId === "string" ? row.meetingId.trim() : "";
+      const meetingTitle = typeof row.meetingTitle === "string" ? row.meetingTitle.trim() : "";
+      const rationale = typeof row.rationale === "string" ? row.rationale.trim() : "";
+      if (!action || !meetingId || !meetingTitle || !rationale) continue;
+      const confidenceRaw = typeof row.confidence === "number" ? row.confidence : 0.5;
+      const priorityRaw = typeof row.priorityScore === "number" ? row.priorityScore : 50;
+      const confidence = Math.min(1, Math.max(0, confidenceRaw));
+      const priorityScore = Math.min(100, Math.max(1, Math.round(priorityRaw)));
+      suggestions.push({
+        id:
+          typeof row.id === "string" && row.id.trim()
+            ? row.id.trim()
+            : `calendar-suggestion-${index + 1}`,
+        meetingId,
+        meetingTitle,
+        action,
+        rationale,
+        confidence,
+        priorityScore,
+        keepFixed: action === "keep" ? true : Boolean(row.keepFixed),
+        communicationDraft:
+          typeof row.communicationDraft === "string" && row.communicationDraft.trim()
+            ? row.communicationDraft.trim()
+            : undefined,
+        suggestedNewStart: undefined,
+        suggestedNewEnd: undefined,
+      });
+    }
+    suggestions.sort((a, b) => b.priorityScore - a.priorityScore);
+    const taskSuggestionInput = Array.isArray(parsed.taskSuggestions) ? parsed.taskSuggestions : [];
+    const taskSuggestions: TaskRecommendationSuggestion[] = [];
+    for (const [index, item] of taskSuggestionInput.entries()) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+      const action = coerceTaskAction(row.action);
+      const taskId = typeof row.taskId === "string" ? row.taskId.trim() : "";
+      const taskTitle = typeof row.taskTitle === "string" ? row.taskTitle.trim() : "";
+      const rationale = typeof row.rationale === "string" ? row.rationale.trim() : "";
+      if (!action || !taskId || !taskTitle || !rationale) continue;
+      const confidenceRaw = typeof row.confidence === "number" ? row.confidence : 0.5;
+      const priorityRaw = typeof row.priorityScore === "number" ? row.priorityScore : 50;
+      taskSuggestions.push({
+        id:
+          typeof row.id === "string" && row.id.trim()
+            ? row.id.trim()
+            : `task-suggestion-${index + 1}`,
+        taskId,
+        taskTitle,
+        action,
+        rationale,
+        confidence: Math.min(1, Math.max(0, confidenceRaw)),
+        priorityScore: Math.min(100, Math.max(1, Math.round(priorityRaw))),
+      });
+    }
+    taskSuggestions.sort((a, b) => b.priorityScore - a.priorityScore);
+    if (!summary || !reasoningNote || suggestions.length === 0) return undefined;
+    return {
+      summary,
+      reasoningNote,
+      scannedMeetings,
+      scannedTasks,
+      generatedAt: new Date().toISOString(),
+      suggestions,
+      taskSuggestions,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function fallbackCalendarRecommendations(
+  input: NonNullable<CoachChatRequest["calendarRecommendations"]>,
+): CalendarRecommendationsResponse {
+  const reason = (input.reason || "").toLowerCase();
+  const severePersonal = hasSeverePersonalReason(input.cause, input.reason);
+  const stressSignal = reason.includes("stress") || reason.includes("anx") || reason.includes("panic");
+  const summary = severePersonal
+    ? "You flagged a serious personal situation. The safest plan is to reduce today's load and protect recovery time."
+    : stressSignal
+      ? "You reported stress. Focus on reducing cognitive load by moving lower-impact meetings first."
+      : "You're delayed. Prioritize critical commitments and move lower-impact items where possible.";
+  const reasoningNote = severePersonal
+    ? "Fallback heuristic prioritized wellbeing and immediate de-escalation."
+    : "Fallback heuristic ranked meetings by attendee count, proximity, and host criticality hints.";
+
+  const suggestions = input.meetings
+    .map((meeting, index) => {
+      const host = (meeting.hostName || "").toLowerCase();
+      const title = meeting.title.toLowerCase();
+      const likelyCriticalHost =
+        host.includes("manager") || host.includes("director") || host.includes("lead") || host.includes("senior");
+      const likelyLowPriorityTitle =
+        title.includes("swim") ||
+        title.includes("workout") ||
+        title.includes("optional") ||
+        title.includes("check-in") ||
+        title.includes("catch up");
+      const attendeesPenalty = Math.min(30, Math.max(0, (meeting.attendees - 1) * 4));
+      const basePriority = severePersonal ? 90 : stressSignal ? 75 : 60;
+      const moveBias = likelyLowPriorityTitle ? 18 : 0;
+      const criticalPenalty = likelyCriticalHost ? 25 : 0;
+      const priorityScore = Math.min(100, Math.max(1, basePriority + moveBias - criticalPenalty - attendeesPenalty));
+
+      const keepFixed = likelyCriticalHost || meeting.attendees >= 6;
+      const action: CalendarSuggestionAction = keepFixed
+        ? "keep"
+        : severePersonal
+          ? "move"
+          : likelyLowPriorityTitle
+            ? "move"
+            : meeting.attendees <= 2
+              ? "shorten"
+              : "keep";
+
+      const start = new Date(meeting.start);
+      const end = new Date(meeting.end);
+      const fallbackShiftMs = 60 * 60 * 1000;
+      const shiftedStart = new Date(start.getTime() + fallbackShiftMs).toISOString();
+      const shiftedEnd = new Date(end.getTime() + fallbackShiftMs).toISOString();
+      const shortenedEnd = new Date(Math.max(start.getTime() + 15 * 60 * 1000, end.getTime() - 15 * 60 * 1000)).toISOString();
+
+      return {
+        id: `fallback-calendar-${index + 1}`,
+        meetingId: meeting.id,
+        meetingTitle: meeting.title,
+        action,
+        rationale:
+          action === "keep"
+            ? "Likely high coordination cost or leadership dependency; keep as scheduled and communicate constraints early."
+            : action === "shorten"
+              ? "Shortening this meeting preserves momentum while lowering cognitive strain."
+              : "Moving this meeting reduces immediate overload and creates recovery space for critical work.",
+        confidence: keepFixed ? 0.78 : 0.7,
+        priorityScore,
+        keepFixed,
+        communicationDraft:
+          action === "keep"
+            ? `Hi ${meeting.hostName || "team"}, quick heads up that I am running delayed today. I can still join "${meeting.title}" but may need to focus on the key decisions first.`
+            : `Hi ${meeting.hostName || "team"}, I am currently delayed due to personal constraints and need to adjust "${meeting.title}". Could we move this to a later slot today or tomorrow?`,
+        suggestedNewStart: undefined,
+        suggestedNewEnd: undefined,
+      };
+    })
+    .sort((a, b) => b.priorityScore - a.priorityScore);
+  const taskSuggestions = buildFallbackTaskSuggestions(input.tasks, severePersonal || stressSignal);
+
+  return {
+    summary,
+    reasoningNote,
+    scannedMeetings: input.meetings.length,
+    scannedTasks: input.tasks.length,
+    generatedAt: new Date().toISOString(),
+    suggestions,
+    taskSuggestions,
+  };
+}
+
+function buildFallbackTaskSuggestions(
+  tasks: CalendarRecommendationTaskInput[],
+  reducedCapacity: boolean,
+): TaskRecommendationSuggestion[] {
+  return tasks
+    .map((task, index) => {
+      const highPriority = task.priority === "high";
+      const lowPriority = task.priority === "low";
+      const action: TaskSuggestionAction = reducedCapacity
+        ? highPriority
+          ? "do_today"
+          : "defer_today"
+        : highPriority
+          ? "do_today"
+          : lowPriority
+            ? "trim_scope"
+            : "do_today";
+      return {
+        id: `fallback-task-${index + 1}`,
+        taskId: task.id,
+        taskTitle: task.title,
+        action,
+        rationale:
+          action === "do_today"
+            ? "This task carries the highest urgency/priority, so completing it today protects delivery."
+            : action === "defer_today"
+              ? "Deferring this lower-priority task reduces load and preserves capacity for critical work."
+              : "Keep progress but reduce scope today to avoid overload.",
+        confidence: highPriority ? 0.82 : reducedCapacity ? 0.78 : 0.7,
+        priorityScore: highPriority ? 90 : lowPriority ? 40 : 65,
+      };
+    })
+    .sort((a, b) => b.priorityScore - a.priorityScore);
+}
+
+function buildHealthInterventionPrompt(
+  input: NonNullable<CoachChatRequest["healthIntervention"]>,
+): string {
+  return `You are Clarity AI Health Support Coach.
+Generate practical interventions for a working person between 9am and 5pm.
+
+Current time: ${input.currentTime}
+Current mood: ${input.checkIn.currentMood}
+Current focus: ${input.checkIn.focusLevel}
+Current energy: ${input.checkIn.energyLevel}
+Last meal recency: ${input.checkIn.lastMealRecency}
+Hydration status: ${input.checkIn.hydrationStatus}
+Symptoms: ${input.checkIn.symptoms.join(", ")}
+
+Baseline profile:
+- Sleep baseline: ${input.preferences?.baselineSleepHours ?? "unknown"}
+- Mood baseline: ${input.preferences?.baselineMood ?? "unknown"}
+- Food rhythm: ${input.preferences?.nutritionRhythm ?? "unknown"}
+- Hydration habit: ${input.preferences?.hydrationHabit ?? "unknown"}
+
+Return JSON only in this shape:
+{
+  "immediateProtocol": ["string", "string", "string"],
+  "workloadShaping": ["string", "string", "string"],
+  "escalationAdvice": "string",
+  "monitoringCheckpoint": "string"
+}
+
+Rules:
+- Be action-heavy and specific; avoid generic advice.
+- For mild/moderate state: prioritize recovery + workload shaping before delay/cancel.
+- For high severity: prioritize safety and stronger workload reduction/escalation.
+- Do NOT generate message drafts in this response.
+- escalationAdvice should only suggest when to inform manager/owner, without drafting text.
+- Keep immediateProtocol feasible in 5-15 minutes.
+- Do not use markdown. JSON only.`;
+}
+
+function parseHealthInterventionPlan(raw: string): HealthInterventionPlan | undefined {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
+    const immediateProtocol = Array.isArray(parsed.immediateProtocol)
+      ? parsed.immediateProtocol
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+          .slice(0, 5)
+      : [];
+    const workloadShaping = Array.isArray(parsed.workloadShaping)
+      ? parsed.workloadShaping
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+          .slice(0, 5)
+      : [];
+    const escalationAdvice =
+      typeof parsed.escalationAdvice === "string" ? parsed.escalationAdvice.trim() : "";
+    const monitoringCheckpoint =
+      typeof parsed.monitoringCheckpoint === "string" ? parsed.monitoringCheckpoint.trim() : "";
+    if (
+      immediateProtocol.length === 0 ||
+      workloadShaping.length === 0 ||
+      !escalationAdvice ||
+      !monitoringCheckpoint
+    ) {
+      return undefined;
+    }
+    return {
+      immediateProtocol,
+      workloadShaping,
+      escalationAdvice,
+      monitoringCheckpoint,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 async function callOpenAIChatCompletion(
   apiKey: string,
   messages: CoachChatMessage[],
@@ -606,11 +1018,17 @@ export async function chatWithCoach(
             constraints: payload.overwhelm?.constraints,
           })
         : undefined;
+    const fallbackCalendarPlan =
+      mode === "calendar_recommendations" && payload.calendarRecommendations
+        ? fallbackCalendarRecommendations(payload.calendarRecommendations)
+        : undefined;
     return {
       reply:
         "No OpenAI API key is configured yet. Add OPENAI_API_KEY in .env.local or save your key in AI Coach settings, then ask again. In the meantime: state your blocker, ask for one concrete decision, and propose a short plan.",
       actions: fallbackActions,
       overwhelmPlan: fallbackOverwhelm,
+      calendarRecommendations: fallbackCalendarPlan,
+      healthInterventionPlan: undefined,
       metrics: {
         mode,
         generatedAt: new Date().toISOString(),
@@ -693,6 +1111,95 @@ export async function chatWithCoach(
     return {
       reply: parsed ? "Action cards generated." : "Using fallback action cards.",
       actions,
+      metrics: {
+        mode,
+        generatedAt: new Date().toISOString(),
+        usedFallback: !parsed,
+      },
+    };
+  }
+
+  if (mode === "calendar_recommendations") {
+    const calendarInput = payload.calendarRecommendations;
+    if (!calendarInput) {
+      return {
+        reply: "Calendar recommendation context missing. Using fallback recommendations.",
+        calendarRecommendations: fallbackCalendarRecommendations({
+          currentTime: new Date().toISOString(),
+          triggerTime: new Date().toISOString(),
+          meetings: [],
+          tasks: [],
+        }),
+        metrics: {
+          mode,
+          generatedAt: new Date().toISOString(),
+          usedFallback: true,
+        },
+      };
+    }
+
+    const recommendationMessages: CoachChatMessage[] = [
+      {
+        role: "system",
+        content:
+          "You are Clarity AI Coach. Produce safe, practical calendar triage suggestions. Always return valid JSON only.",
+      },
+      {
+        role: "user",
+        content: buildCalendarRecommendationsPrompt(calendarInput),
+      },
+    ];
+    const raw = await callOpenAIChatCompletion(apiKey, recommendationMessages, model, 0.2);
+    const parsed = parseCalendarRecommendations(
+      raw,
+      calendarInput.meetings.length,
+      calendarInput.tasks.length,
+    );
+    const recommendations = parsed ?? fallbackCalendarRecommendations(calendarInput);
+    return {
+      reply: parsed
+        ? "Calendar recommendations generated."
+        : "Using fallback calendar recommendations.",
+      calendarRecommendations: recommendations,
+      metrics: {
+        mode,
+        generatedAt: new Date().toISOString(),
+        usedFallback: !parsed,
+      },
+    };
+  }
+
+  if (mode === "health_interventions") {
+    const healthInput = payload.healthIntervention;
+    if (!healthInput) {
+      return {
+        reply: "Health intervention context missing.",
+        healthInterventionPlan: undefined,
+        metrics: {
+          mode,
+          generatedAt: new Date().toISOString(),
+          usedFallback: true,
+        },
+      };
+    }
+
+    const healthMessages: CoachChatMessage[] = [
+      {
+        role: "system",
+        content:
+          "You are Clarity AI Coach. Produce concrete, safety-aware health intervention plans for workday recovery. Always return valid JSON only.",
+      },
+      {
+        role: "user",
+        content: buildHealthInterventionPrompt(healthInput),
+      },
+    ];
+
+    const raw = await callOpenAIChatCompletion(apiKey, healthMessages, model, 0.2);
+    const parsed = parseHealthInterventionPlan(raw);
+    return {
+      reply: parsed ? "Health intervention plan generated." : "Unable to structure health plan output.",
+      healthInterventionPlan: parsed,
       metrics: {
         mode,
         generatedAt: new Date().toISOString(),

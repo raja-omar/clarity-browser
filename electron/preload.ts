@@ -5,10 +5,15 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   EnergyLog,
+  HealthCheckIn,
+  GoogleCalendarStatus,
+  GoogleCalendarSyncResult,
+  GoogleCalendarSyncWindow,
   JiraSettings,
   Meeting,
   OverwhelmSession,
   SaveOverwhelmSessionInput,
+  SaveHealthCheckInInput,
   Task,
   TaskStatus,
   UpdateMeetingSupportInput,
@@ -28,6 +33,10 @@ contextBridge.exposeInMainWorld("clarity", {
     ipcRenderer.invoke("clarity:save-user-preferences", payload),
   saveEnergyLog: (payload: Omit<EnergyLog, "id" | "timestamp">) =>
     ipcRenderer.invoke("clarity:save-energy-log", payload),
+  saveHealthCheckIn: (payload: SaveHealthCheckInInput) =>
+    ipcRenderer.invoke("clarity:save-health-checkin", payload) as Promise<HealthCheckIn>,
+  listHealthCheckIns: (limit?: number) =>
+    ipcRenderer.invoke("clarity:list-health-checkins", limit) as Promise<HealthCheckIn[]>,
   openExternal: (url: string) => ipcRenderer.invoke("clarity:open-external", url),
   saveJiraSettings: (settings: JiraSettings) =>
     ipcRenderer.invoke("clarity:save-jira-settings", settings),
@@ -38,6 +47,14 @@ contextBridge.exposeInMainWorld("clarity", {
   chatWithCoach: (payload: CoachChatRequest): Promise<CoachChatResponse> =>
     ipcRenderer.invoke("clarity:chat-with-coach", payload),
   hasOpenAIKey: (): Promise<{ configured: boolean }> => ipcRenderer.invoke("clarity:has-openai-key"),
+  getGoogleCalendarStatus: (): Promise<GoogleCalendarStatus> =>
+    ipcRenderer.invoke("clarity:get-google-calendar-status"),
+  connectGoogleCalendar: (): Promise<GoogleCalendarStatus> =>
+    ipcRenderer.invoke("clarity:connect-google-calendar"),
+  disconnectGoogleCalendar: (): Promise<GoogleCalendarStatus> =>
+    ipcRenderer.invoke("clarity:disconnect-google-calendar"),
+  syncGoogleCalendar: (window: GoogleCalendarSyncWindow): Promise<GoogleCalendarSyncResult> =>
+    ipcRenderer.invoke("clarity:sync-google-calendar", window),
   saveOverwhelmSession: (payload: SaveOverwhelmSessionInput): Promise<OverwhelmSession> =>
     ipcRenderer.invoke("clarity:save-overwhelm-session", payload),
   listOverwhelmSessions: (limit?: number): Promise<OverwhelmSession[]> =>

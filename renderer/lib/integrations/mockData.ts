@@ -73,6 +73,7 @@ export function createFallbackBootstrap(): AppBootstrap {
     tasks,
     meetings,
     energyLogs,
+    healthCheckIns: [],
     schedule: generateSchedule(tasks, meetings, energyLogs[0]),
   };
 }

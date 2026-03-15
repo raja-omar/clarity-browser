@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, LoaderCircle, Mail, Plus, X } from "lucide-react";
-import type { CoachContextPayload, Meeting, MeetingPrepItem, UpdateMeetingSupportInput } from "../../types";
+import type {
+  CalendarRecommendationTrigger,
+  CoachContextPayload,
+  Meeting,
+  MeetingPrepItem,
+  UpdateMeetingSupportInput,
+} from "../../types";
 import type { DueSoonReminder } from "./reminderEngine";
 import { buildOverwhelmContextFromReminder } from "../overwhelm/buildOverwhelmContext";
 import { UnifiedOverwhelmFlow } from "../overwhelm/UnifiedOverwhelmFlow";
@@ -14,8 +20,7 @@ interface DueSoonPopupProps {
   onClose: () => void;
   onOpenCoach: (context: CoachContextPayload) => void;
   onUpdateMeetingSupport: (payload: UpdateMeetingSupportInput) => Promise<Meeting | undefined>;
-  onSnooze?: () => void;
-  onMarkHandled?: () => void;
+  onEscalationDraftCopied?: (payload: CalendarRecommendationTrigger) => void;
 }
 
 export function DueSoonPopup({
@@ -24,8 +29,7 @@ export function DueSoonPopup({
   onClose,
   onOpenCoach,
   onUpdateMeetingSupport,
-  onSnooze,
-  onMarkHandled,
+  onEscalationDraftCopied,
 }: DueSoonPopupProps) {
   const [meetingMode, setMeetingMode] = useState<MeetingActionMode | undefined>(undefined);
   const [prepChecklist, setPrepChecklist] = useState<MeetingPrepItem[]>([]);
@@ -272,6 +276,7 @@ export function DueSoonPopup({
                   <UnifiedOverwhelmFlow
                     context={buildOverwhelmContextFromReminder(reminder)}
                     onOpenCoach={(contextPayload) => onOpenCoach(contextPayload)}
+                    onEscalationDraftCopied={onEscalationDraftCopied}
                   />
                 </div>
               ) : null}
@@ -281,6 +286,7 @@ export function DueSoonPopup({
               <UnifiedOverwhelmFlow
                 context={buildOverwhelmContextFromReminder(reminder)}
                 onOpenCoach={(contextPayload) => onOpenCoach(contextPayload)}
+                onEscalationDraftCopied={onEscalationDraftCopied}
               />
             </div>
           )}
@@ -294,20 +300,6 @@ export function DueSoonPopup({
               className="rounded-lg border border-white/15 bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-white/[0.07]"
             >
               Close
-            </button>
-            <button
-              type="button"
-              onClick={onSnooze}
-              className="rounded-lg border border-indigo-400/25 bg-indigo-500/15 px-2.5 py-1.5 text-xs text-indigo-100 transition hover:bg-indigo-500/20"
-            >
-              Snooze 10m
-            </button>
-            <button
-              type="button"
-              onClick={onMarkHandled}
-              className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-100 transition hover:bg-emerald-500/15"
-            >
-              Mark handled
             </button>
           </div>
         </motion.div>

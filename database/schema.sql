@@ -58,7 +58,22 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   focus_periods TEXT,
   workday_start TEXT,
   workday_end TEXT,
+  baseline_sleep_hours TEXT,
+  baseline_mood TEXT,
+  nutrition_rhythm TEXT,
+  hydration_habit TEXT,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS health_checkins (
+  id TEXT PRIMARY KEY,
+  timestamp TEXT NOT NULL,
+  current_mood TEXT NOT NULL,
+  focus_level TEXT NOT NULL,
+  energy_level TEXT NOT NULL,
+  last_meal_recency TEXT NOT NULL,
+  hydration_status TEXT NOT NULL,
+  symptoms_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS jira_settings (

@@ -6,11 +6,13 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   EnergyLog,
+  HealthCheckIn,
   HostPreferredChannel,
   JiraSettings,
   Meeting,
   MeetingPrepItem,
   OverwhelmSession,
+  SaveHealthCheckInInput,
   SaveOverwhelmSessionInput,
   Task,
   TaskSubtask,
@@ -84,7 +86,22 @@ const SCHEMA_SQL = `
     focus_periods TEXT,
     workday_start TEXT,
     workday_end TEXT,
+    baseline_sleep_hours TEXT,
+    baseline_mood TEXT,
+    nutrition_rhythm TEXT,
+    hydration_habit TEXT,
     updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS health_checkins (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    current_mood TEXT NOT NULL,
+    focus_level TEXT NOT NULL,
+    energy_level TEXT NOT NULL,
+    last_meal_recency TEXT NOT NULL,
+    hydration_status TEXT NOT NULL,
+    symptoms_json TEXT
   );
 
   CREATE TABLE IF NOT EXISTS jira_settings (
@@ -200,6 +217,18 @@ function applyBackwardCompatibleMigrations(db: DatabaseClient): void {
   if (!hasColumn("meetings", "reschedule_email_draft")) {
     db.exec("ALTER TABLE meetings ADD COLUMN reschedule_email_draft TEXT");
   }
+  if (!hasColumn("user_preferences", "baseline_sleep_hours")) {
+    db.exec("ALTER TABLE user_preferences ADD COLUMN baseline_sleep_hours TEXT");
+  }
+  if (!hasColumn("user_preferences", "baseline_mood")) {
+    db.exec("ALTER TABLE user_preferences ADD COLUMN baseline_mood TEXT");
+  }
+  if (!hasColumn("user_preferences", "nutrition_rhythm")) {
+    db.exec("ALTER TABLE user_preferences ADD COLUMN nutrition_rhythm TEXT");
+  }
+  if (!hasColumn("user_preferences", "hydration_habit")) {
+    db.exec("ALTER TABLE user_preferences ADD COLUMN hydration_habit TEXT");
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS jira_settings (
@@ -226,6 +255,19 @@ function applyBackwardCompatibleMigrations(db: DatabaseClient): void {
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS health_checkins (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      current_mood TEXT NOT NULL,
+      focus_level TEXT NOT NULL,
+      energy_level TEXT NOT NULL,
+      last_meal_recency TEXT NOT NULL,
+      hydration_status TEXT NOT NULL,
+      symptoms_json TEXT
     );
   `);
 }
@@ -533,6 +575,7 @@ export function getBootstrap(db: DatabaseClient): AppBootstrap {
       `SELECT id, timestamp, sleep_hours as sleepHours, mood, energy FROM energy_logs ORDER BY timestamp DESC LIMIT 5`,
     )
     .all() as EnergyLog[];
+  const healthCheckIns = listHealthCheckIns(db, 20);
 
   const { tabs, bookmarks } = createStarterTabs();
   const schedule = generateSchedule(tasks, meetings, energyLogs[0]);
@@ -544,6 +587,7 @@ export function getBootstrap(db: DatabaseClient): AppBootstrap {
     tasks,
     meetings,
     energyLogs,
+    healthCheckIns,
     schedule,
     userPreferences,
   };
@@ -827,6 +871,82 @@ export function saveEnergyLog(
   `).run(entry);
 
   return entry;
+}
+
+export function saveHealthCheckIn(
+  db: DatabaseClient,
+  payload: SaveHealthCheckInInput,
+): HealthCheckIn {
+  const entry: HealthCheckIn = {
+    id: `health-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    ...payload,
+    symptoms: payload.symptoms.length ? payload.symptoms : ["none"],
+  };
+
+  db.prepare(`
+    INSERT INTO health_checkins (
+      id,
+      timestamp,
+      current_mood,
+      focus_level,
+      energy_level,
+      last_meal_recency,
+      hydration_status,
+      symptoms_json
+    )
+    VALUES (
+      @id,
+      @timestamp,
+      @currentMood,
+      @focusLevel,
+      @energyLevel,
+      @lastMealRecency,
+      @hydrationStatus,
+      @symptomsJson
+    )
+  `).run({
+    ...entry,
+    symptomsJson: JSON.stringify(entry.symptoms),
+  });
+
+  return entry;
+}
+
+export function listHealthCheckIns(db: DatabaseClient, limit = 20): HealthCheckIn[] {
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        id,
+        timestamp,
+        current_mood as currentMood,
+        focus_level as focusLevel,
+        energy_level as energyLevel,
+        last_meal_recency as lastMealRecency,
+        hydration_status as hydrationStatus,
+        symptoms_json as symptomsJson
+      FROM health_checkins
+      ORDER BY timestamp DESC
+      LIMIT @limit
+      `,
+    )
+    .all({ limit }) as Array<
+    Omit<HealthCheckIn, "symptoms"> & {
+      symptomsJson?: string;
+    }
+  >;
+
+  return rows.map((row) => ({
+    id: row.id,
+    timestamp: row.timestamp,
+    currentMood: row.currentMood,
+    focusLevel: row.focusLevel,
+    energyLevel: row.energyLevel,
+    lastMealRecency: row.lastMealRecency,
+    hydrationStatus: row.hydrationStatus,
+    symptoms: safeParseSymptoms(row.symptomsJson),
+  }));
 }
 
 export function createTask(db: DatabaseClient, payload: CreateTaskInput): Task {
@@ -1126,7 +1246,11 @@ export function getUserPreferences(db: DatabaseClient): UserPreferences | undefi
         wake_time as wakeTime,
         focus_periods as focusPeriods,
         workday_start as workdayStart,
-        workday_end as workdayEnd
+        workday_end as workdayEnd,
+        baseline_sleep_hours as baselineSleepHours,
+        baseline_mood as baselineMood,
+        nutrition_rhythm as nutritionRhythm,
+        hydration_habit as hydrationHabit
       FROM user_preferences
       WHERE id = 'default'
     `,
@@ -1139,6 +1263,10 @@ export function getUserPreferences(db: DatabaseClient): UserPreferences | undefi
         focusPeriods?: string;
         workdayStart?: string;
         workdayEnd?: string;
+        baselineSleepHours?: UserPreferences["baselineSleepHours"];
+        baselineMood?: UserPreferences["baselineMood"];
+        nutritionRhythm?: UserPreferences["nutritionRhythm"];
+        hydrationHabit?: UserPreferences["hydrationHabit"];
       }
     | undefined;
 
@@ -1151,6 +1279,10 @@ export function getUserPreferences(db: DatabaseClient): UserPreferences | undefi
     focusPeriods: safeParseStringArray(row.focusPeriods),
     workdayStart: row.workdayStart ?? "09:00",
     workdayEnd: row.workdayEnd ?? "17:00",
+    baselineSleepHours: row.baselineSleepHours ?? "7_to_8",
+    baselineMood: row.baselineMood ?? "okay",
+    nutritionRhythm: row.nutritionRhythm ?? "three_meals",
+    hydrationHabit: row.hydrationHabit ?? "some",
   };
 }
 
@@ -1167,6 +1299,10 @@ export function saveUserPreferences(
       focus_periods,
       workday_start,
       workday_end,
+      baseline_sleep_hours,
+      baseline_mood,
+      nutrition_rhythm,
+      hydration_habit,
       updated_at
     )
     VALUES (
@@ -1177,6 +1313,10 @@ export function saveUserPreferences(
       @focusPeriods,
       @workdayStart,
       @workdayEnd,
+      @baselineSleepHours,
+      @baselineMood,
+      @nutritionRhythm,
+      @hydrationHabit,
       @updatedAt
     )
     ON CONFLICT(id) DO UPDATE SET
@@ -1186,6 +1326,10 @@ export function saveUserPreferences(
       focus_periods = excluded.focus_periods,
       workday_start = excluded.workday_start,
       workday_end = excluded.workday_end,
+      baseline_sleep_hours = excluded.baseline_sleep_hours,
+      baseline_mood = excluded.baseline_mood,
+      nutrition_rhythm = excluded.nutrition_rhythm,
+      hydration_habit = excluded.hydration_habit,
       updated_at = excluded.updated_at
   `).run({
     ...payload,
@@ -1241,6 +1385,16 @@ function safeParseObject(value?: string): Record<string, unknown> | undefined {
   } catch {
     return undefined;
   }
+}
+
+function safeParseSymptoms(value?: string): HealthCheckIn["symptoms"] {
+  const parsed = safeParseStringArray(value);
+  if (parsed.length === 0) return ["none"];
+  const unique = Array.from(new Set(parsed));
+  if (unique.includes("none") && unique.length > 1) {
+    return unique.filter((item) => item !== "none") as HealthCheckIn["symptoms"];
+  }
+  return unique as HealthCheckIn["symptoms"];
 }
 
 function toTask(row: {

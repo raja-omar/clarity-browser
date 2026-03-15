@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Sidebar } from "../../components/sidebar/Sidebar";
 import { TabBar } from "../../components/tabs/TabBar";
 import { BrowserToolbar } from "../../components/browser/BrowserToolbar";
@@ -9,14 +10,19 @@ import { CalendarDrawer } from "../../features/calendar/CalendarDrawer";
 import { ContextDrawer } from "../../features/ai/ContextDrawer";
 import { FocusModeOverlay } from "../../features/ai/FocusModeOverlay";
 import { MorningBriefModal } from "../../features/ai/MorningBriefModal";
+import { HealthCheckInModal } from "../../features/ai/HealthCheckInModal";
 import { DueSoonPopup } from "../../features/notifications/DueSoonPopup";
 import type {
   Bookmark,
   BrowserTab,
+  CalendarRecommendationTrigger,
   CoachContextPayload,
   EnergyLevel,
   EnergyLog,
+  HealthInterventionPlan,
+  GoogleCalendarStatus,
   Meeting,
+  SaveHealthCheckInInput,
   ScheduleBlock,
   Task,
 } from "../../types";
@@ -37,12 +43,15 @@ interface ClarityLayoutProps {
   calendarDrawerOpen: boolean;
   contextDrawerOpen: boolean;
   morningBriefOpen: boolean;
+  healthCheckInOpen: boolean;
   sidebarCollapsed: boolean;
   tasks: Task[];
   selectedTask?: Task;
   meetings: Meeting[];
   schedule: ScheduleBlock[];
   energyLogs: EnergyLog[];
+  googleCalendarStatus: GoogleCalendarStatus;
+  googleCalendarBusy: boolean;
   onSelectTab: (tabId: string) => void;
   onSelectHome: () => void;
   onSelectGroup: (group: string) => void;
@@ -65,6 +74,8 @@ interface ClarityLayoutProps {
   onSetCalendarDrawer: (open: boolean) => void;
   onSetContextDrawer: (open: boolean) => void;
   onSetMorningBrief: (open: boolean) => void;
+  onStartDay: () => void;
+  onSetHealthCheckIn: (open: boolean) => void;
   onToggleSidebar: () => void;
   onCloseTab: (tabId: string) => void;
   onNewTab: () => void;
@@ -73,19 +84,28 @@ interface ClarityLayoutProps {
   onOpenAddMeetingModal: () => void;
   onOpenPersonalization: () => void;
   onOpenHealthCheckIn: () => void;
+  onSubmitHealthCheckIn: (payload: SaveHealthCheckInInput) => Promise<void>;
+  onGenerateHealthEscalationDraft: (userIntent: string) => Promise<string>;
+  onHealthCheckInRecovered: () => void;
+  healthCheckInSubmitting?: boolean;
+  healthInterventionPlan?: HealthInterventionPlan;
+  healthInterventionLoading?: boolean;
+  projectedHealthIntervalMinutes?: number;
+  projectedHealthTimes?: string[];
   onSyncJira: () => void;
   jiraSyncing?: boolean;
   dueSoonReminder?: DueSoonReminder;
   dueSoonReminderOpen: boolean;
+  calendarScanNotice?: string;
   onCloseDueSoonReminder: () => void;
-  onSnoozeDueSoonReminder: () => void;
-  onMarkHandledDueSoonReminder: () => void;
   onOpenCoach: (context: CoachContextPayload) => void;
   onUpdateMeetingSupport: (
     payload: import("../../types").UpdateMeetingSupportInput,
   ) => Promise<Meeting | undefined>;
-  onTriggerTestTaskPopup: () => void;
-  onTriggerTestMeetingPopup: () => void;
+  onEscalationDraftCopied: (payload: CalendarRecommendationTrigger) => void;
+  onConnectGoogleCalendar: () => void;
+  onRefreshGoogleCalendar: () => void;
+  onDisconnectGoogleCalendar: () => void;
 }
 
 export function ClarityLayout({
@@ -103,12 +123,15 @@ export function ClarityLayout({
   calendarDrawerOpen,
   contextDrawerOpen,
   morningBriefOpen,
+  healthCheckInOpen,
   sidebarCollapsed,
   tasks,
   selectedTask,
   meetings,
   schedule,
   energyLogs,
+  googleCalendarStatus,
+  googleCalendarBusy,
   onSelectTab,
   onSelectHome,
   onSelectGroup,
@@ -131,6 +154,8 @@ export function ClarityLayout({
   onSetCalendarDrawer,
   onSetContextDrawer,
   onSetMorningBrief,
+  onStartDay,
+  onSetHealthCheckIn,
   onToggleSidebar,
   onCloseTab,
   onNewTab,
@@ -139,17 +164,26 @@ export function ClarityLayout({
   onOpenAddMeetingModal,
   onOpenPersonalization,
   onOpenHealthCheckIn,
+  onSubmitHealthCheckIn,
+  onGenerateHealthEscalationDraft,
+  onHealthCheckInRecovered,
+  healthCheckInSubmitting,
+  healthInterventionPlan,
+  healthInterventionLoading,
+  projectedHealthIntervalMinutes,
+  projectedHealthTimes,
   onSyncJira,
   jiraSyncing,
   dueSoonReminder,
   dueSoonReminderOpen,
+  calendarScanNotice,
   onCloseDueSoonReminder,
-  onSnoozeDueSoonReminder,
-  onMarkHandledDueSoonReminder,
   onOpenCoach,
   onUpdateMeetingSupport,
-  onTriggerTestTaskPopup,
-  onTriggerTestMeetingPopup,
+  onEscalationDraftCopied,
+  onConnectGoogleCalendar,
+  onRefreshGoogleCalendar,
+  onDisconnectGoogleCalendar,
 }: ClarityLayoutProps) {
   const viewportRef = useRef<BrowserViewportHandle>(null);
   const visibleTabs = tabs.filter((tab) =>
@@ -164,6 +198,19 @@ export function ClarityLayout({
 
   return (
     <>
+      <AnimatePresence>
+        {calendarScanNotice ? (
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.2 }}
+            className="fixed left-1/2 top-4 z-[120] -translate-x-1/2 rounded-xl border border-indigo-300/25 bg-slate-950/95 px-4 py-2.5 text-xs text-indigo-100 shadow-2xl shadow-black/40 backdrop-blur"
+          >
+            {calendarScanNotice}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <div className="flex h-screen gap-3 p-3">
         <Sidebar
           tabs={tabs}
@@ -249,8 +296,13 @@ export function ClarityLayout({
         open={calendarDrawerOpen}
         onClose={() => onSetCalendarDrawer(false)}
         meetings={meetings}
+        googleCalendarStatus={googleCalendarStatus}
+        googleCalendarBusy={googleCalendarBusy}
         onOpenAddMeetingModal={onOpenAddMeetingModal}
         onOpenCoach={onOpenCoach}
+        onConnectGoogleCalendar={onConnectGoogleCalendar}
+        onRefreshGoogleCalendar={onRefreshGoogleCalendar}
+        onDisconnectGoogleCalendar={onDisconnectGoogleCalendar}
       />
 
       <ContextDrawer
@@ -263,10 +315,24 @@ export function ClarityLayout({
       <MorningBriefModal
         open={morningBriefOpen}
         onClose={() => onSetMorningBrief(false)}
+        onStartDay={onStartDay}
         tasks={tasks}
         meetings={meetings}
         schedule={schedule}
         latestEnergy={energyLogs[0]}
+      />
+
+      <HealthCheckInModal
+        open={healthCheckInOpen}
+        onClose={() => onSetHealthCheckIn(false)}
+        onSubmit={onSubmitHealthCheckIn}
+        onGenerateEscalationDraft={onGenerateHealthEscalationDraft}
+        onFeelBetter={onHealthCheckInRecovered}
+        submitting={healthCheckInSubmitting}
+        plan={healthInterventionPlan}
+        planLoading={healthInterventionLoading}
+        projectedIntervalMinutes={projectedHealthIntervalMinutes}
+        projectedTimes={projectedHealthTimes}
       />
 
       <CommandPalette
@@ -301,38 +367,10 @@ export function ClarityLayout({
         reminder={dueSoonReminder}
         open={dueSoonReminderOpen}
         onClose={onCloseDueSoonReminder}
-        onSnooze={onSnoozeDueSoonReminder}
-        onMarkHandled={onMarkHandledDueSoonReminder}
         onOpenCoach={onOpenCoach}
         onUpdateMeetingSupport={onUpdateMeetingSupport}
+        onEscalationDraftCopied={onEscalationDraftCopied}
       />
-      <div
-        className="fixed bottom-5 left-5 z-[81] rounded-xl border border-white/10 bg-slate-950/90 p-2 backdrop-blur"
-        style={{ width: sidebarCollapsed ? 64 : 260 }}
-      >
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={onTriggerTestTaskPopup}
-            className={`rounded-xl border border-indigo-400/30 bg-indigo-500/15 px-3 py-2 text-xs font-medium text-indigo-100 shadow-[0_0_0_1px_rgba(99,102,241,0.08)] transition duration-150 hover:-translate-y-0.5 hover:border-indigo-300/45 hover:bg-indigo-500/25 hover:shadow-[0_10px_30px_rgba(79,70,229,0.18)] active:translate-y-0 active:scale-[0.99] ${
-              sidebarCollapsed ? "w-full" : "w-full text-left"
-            }`}
-            title="Incoming Task CheckIn"
-          >
-            {sidebarCollapsed ? "Task" : "Incoming Task CheckIn"}
-          </button>
-          <button
-            type="button"
-            onClick={onTriggerTestMeetingPopup}
-            className={`rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-xs font-medium text-emerald-100 shadow-[0_0_0_1px_rgba(16,185,129,0.08)] transition duration-150 hover:-translate-y-0.5 hover:border-emerald-300/45 hover:bg-emerald-500/25 hover:shadow-[0_10px_30px_rgba(16,185,129,0.18)] active:translate-y-0 active:scale-[0.99] ${
-              sidebarCollapsed ? "w-full" : "w-full text-left"
-            }`}
-            title="Incoming Meeting CheckIn"
-          >
-            {sidebarCollapsed ? "Meet" : "Incoming Meeting CheckIn"}
-          </button>
-        </div>
-      </div>
     </>
   );
 }

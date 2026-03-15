@@ -81,12 +81,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 function normalizeTask(task: Task): Task {
   const estimate = task.estimatedTimeMinutes ?? task.estimate ?? 25;
   const title = task.title || task.name || "Untitled Task";
+  const priority = task.priority ?? "medium";
   return {
     ...task,
     title,
     name: task.name ?? title,
     estimate,
     estimatedTimeMinutes: estimate,
+    priority,
     dueAt: task.dueAt ?? task.deadline,
     deadline: task.deadline ?? task.dueAt,
     ownerName: task.ownerName,

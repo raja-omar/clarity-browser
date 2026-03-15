@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bot, CheckCircle2, Copy, LoaderCircle, RefreshCw } from "lucide-react";
 import type {
+  CalendarRecommendationTrigger,
   OverloadFeeling,
   OverwhelmCause,
   OverwhelmContextPayload,
@@ -15,13 +16,14 @@ interface UnifiedOverwhelmFlowProps {
   className?: string;
   onOpenCoach?: (context: ReturnType<typeof toCoachContextFromOverwhelm>) => void;
   onApplyPlan?: (plan: OverwhelmPlan) => void;
+  onEscalationDraftCopied?: (payload: CalendarRecommendationTrigger) => void;
 }
 
 export function UnifiedOverwhelmFlow({
   context,
   className,
   onOpenCoach,
-  onApplyPlan,
+  onEscalationDraftCopied,
 }: UnifiedOverwhelmFlowProps) {
   const [feeling, setFeeling] = useState<OverloadFeeling>("overwhelmed");
   const [cause, setCause] = useState<OverwhelmCause>("work");
@@ -138,23 +140,10 @@ export function UnifiedOverwhelmFlow({
     }
   }
 
-  async function completePlan(): Promise<void> {
-    if (!result) return;
-    const completedPlan: OverwhelmPlan = {
-      ...result.plan,
-      communicationDraft: {
-        ...result.plan.communicationDraft,
-        message: draft.trim() || result.plan.communicationDraft.message,
-      },
-    };
-    onApplyPlan?.(completedPlan);
-    await saveSession(completedPlan, "done");
-    setSavedMessage("Plan applied and saved.");
-  }
-
   async function openMessageDraft(): Promise<void> {
     if (!result) return;
     setDraftLoading(true);
+    const triggeredAt = new Date().toISOString();
     const fallbackDraft = buildHumanMessageDraft({
       recipient: result.plan.communicationDraft.recipient,
       itemTitle: context.itemTitle,
@@ -169,7 +158,15 @@ export function UnifiedOverwhelmFlow({
       userSituation: constraints,
       fallbackDraft,
     });
-    setDraft(aiDraft || fallbackDraft);
+    const nextDraft = (aiDraft || fallbackDraft).trim();
+    setDraft(nextDraft);
+    onEscalationDraftCopied?.({
+      context,
+      cause,
+      constraints: constraints.trim(),
+      copiedAt: triggeredAt,
+      draftMessage: nextDraft,
+    });
     setActiveStep("message");
     setDraftLoading(false);
   }
@@ -335,32 +332,7 @@ export function UnifiedOverwhelmFlow({
                     {copied ? "Copied" : "Copy draft"}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void completePlan()}
-                  className="rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-2.5 py-1.5 text-xs text-emerald-100 transition hover:bg-emerald-500/20"
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Do now and save
-                  </span>
-                </button>
               </div>
-            </div>
-          ) : null}
-
-          {activeStep !== "message" ? (
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={() => void completePlan()}
-                className="rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-2.5 py-1.5 text-xs text-emerald-100 transition hover:bg-emerald-500/20"
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Do now and save
-                </span>
-              </button>
             </div>
           ) : null}
         </div>

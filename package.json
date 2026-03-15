@@ -21,7 +21,10 @@
     "better-sqlite3": "^12.8.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.36.0",
+    "googleapis": "^171.4.0",
+    "keytar": "^7.9.0",
     "lucide-react": "^0.577.0",
+    "open": "^11.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "zustand": "^5.0.11"

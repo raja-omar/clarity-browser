@@ -3,14 +3,37 @@ export type TaskSource = "jira" | "personal";
 export type TaskStatus = "todo" | "in-progress" | "done";
 export type TaskType = "focus" | "relax" | "collaborate";
 export type MeetingType = "static" | "dynamic" | "optional";
+export type MeetingSource = "local" | "google";
 export type HostPreferredChannel = "chat" | "email" | "slack";
 export type CoachChatRole = "system" | "user" | "assistant";
-export type CoachMode = "chat" | "action_cards" | "overwhelm_flow";
+export type CoachMode =
+  | "chat"
+  | "action_cards"
+  | "overwhelm_flow"
+  | "calendar_recommendations"
+  | "health_interventions";
 export type CoachActionKind = "do_next" | "micro_steps" | "smart_deferral";
 export type OverloadFeeling = "onTrack" | "overwhelmed";
 export type OverwhelmUrgency = "low" | "medium" | "high";
 export type OverwhelmCause = "work" | "personal";
 export type OverwhelmStatus = "open" | "done" | "dismissed" | "snoozed";
+export type CalendarSuggestionAction = "keep" | "move" | "cancel" | "shorten";
+export type TaskSuggestionAction = "do_today" | "defer_today" | "trim_scope";
+export type BaselineSleepHoursOption = "under_5" | "5_to_6" | "6_to_7" | "7_to_8" | "8_plus";
+export type BaselineMoodOption = "very_low" | "low" | "okay" | "good" | "great";
+export type NutritionRhythmOption = "irregular" | "two_meals" | "three_meals" | "frequent_snacks";
+export type HydrationHabitOption = "rarely" | "some" | "consistent";
+export type HealthCheckInMoodOption = "very_low" | "low" | "okay" | "good" | "great";
+export type FocusLevelOption = "scattered" | "somewhat_focused" | "focused";
+export type MealRecencyOption = "over_6h" | "4_to_6h" | "2_to_4h" | "under_2h";
+export type HydrationStatusOption = "dehydrated" | "a_bit_low" | "hydrated";
+export type SymptomOption =
+  | "headache"
+  | "eye_strain"
+  | "body_fatigue"
+  | "stress"
+  | "anxiety"
+  | "none";
 
 export interface UserPreferences {
   sleepPattern: "regular" | "irregular";
@@ -19,6 +42,10 @@ export interface UserPreferences {
   focusPeriods: string[];
   workdayStart: string;
   workdayEnd: string;
+  baselineSleepHours: BaselineSleepHoursOption;
+  baselineMood: BaselineMoodOption;
+  nutritionRhythm: NutritionRhythmOption;
+  hydrationHabit: HydrationHabitOption;
 }
 
 export interface CreateTaskInput {
@@ -64,8 +91,10 @@ export interface BrowserTab {
     | "calendar"
     | "task"
     | "focus"
-    | "coach";
+    | "coach"
+    | "calendar_recommendations";
   coachContext?: CoachContextPayload;
+  calendarRecommendationsData?: CalendarRecommendationsResponse;
 }
 
 export interface Bookmark {
@@ -123,9 +152,12 @@ export interface Meeting {
   start: string;
   end: string;
   attendees: number;
+  source?: MeetingSource;
   attendeeList?: string[];
   notes?: string;
   type?: MeetingType;
+  isAllDay?: boolean;
+  location?: string;
   meetingLink?: string;
   notesLink?: string;
   recurringRule?: string;
@@ -136,6 +168,24 @@ export interface Meeting {
   prepChecklist?: MeetingPrepItem[];
   rescheduleReason?: string;
   rescheduleEmailDraft?: string;
+}
+
+export interface GoogleCalendarStatus {
+  available: boolean;
+  connected: boolean;
+  email?: string;
+  lastSyncedAt?: string;
+  error?: string;
+}
+
+export interface GoogleCalendarSyncWindow {
+  start: string;
+  end: string;
+}
+
+export interface GoogleCalendarSyncResult {
+  meetings: Meeting[];
+  status: GoogleCalendarStatus;
 }
 
 export interface UpdateMeetingSupportInput {
@@ -151,6 +201,20 @@ export interface EnergyLog {
   sleepHours: number;
   mood: number;
   energy: EnergyLevel;
+}
+
+export interface SaveHealthCheckInInput {
+  currentMood: HealthCheckInMoodOption;
+  focusLevel: FocusLevelOption;
+  energyLevel: EnergyLevel;
+  lastMealRecency: MealRecencyOption;
+  hydrationStatus: HydrationStatusOption;
+  symptoms: SymptomOption[];
+}
+
+export interface HealthCheckIn extends SaveHealthCheckInInput {
+  id: string;
+  timestamp: string;
 }
 
 export interface ScheduleBlock {
@@ -169,6 +233,7 @@ export interface AppBootstrap {
   tasks: Task[];
   meetings: Meeting[];
   energyLogs: EnergyLog[];
+  healthCheckIns: HealthCheckIn[];
   schedule: ScheduleBlock[];
   userPreferences?: UserPreferences;
 }
@@ -240,6 +305,73 @@ export interface OverwhelmFlowResponse {
   usedFallback: boolean;
 }
 
+export interface CalendarRecommendationMeetingInput {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  attendees: number;
+  source?: MeetingSource;
+  type?: MeetingType;
+  isAllDay?: boolean;
+  hostName?: string;
+  description?: string;
+  location?: string;
+}
+
+export interface CalendarRecommendationSuggestion {
+  id: string;
+  meetingId: string;
+  meetingTitle: string;
+  action: CalendarSuggestionAction;
+  rationale: string;
+  confidence: number;
+  priorityScore: number;
+  keepFixed: boolean;
+  communicationDraft?: string;
+  suggestedNewStart?: string;
+  suggestedNewEnd?: string;
+}
+
+export interface CalendarRecommendationTaskInput {
+  id: string;
+  title: string;
+  priority: Task["priority"];
+  status: TaskStatus;
+  dueAt?: string;
+  deadline?: string;
+  estimatedTimeMinutes?: number;
+  description?: string;
+}
+
+export interface TaskRecommendationSuggestion {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  action: TaskSuggestionAction;
+  rationale: string;
+  confidence: number;
+  priorityScore: number;
+}
+
+export interface CalendarRecommendationsResponse {
+  summary: string;
+  reasoningNote: string;
+  scannedMeetings: number;
+  scannedTasks: number;
+  generatedAt: string;
+  suggestions: CalendarRecommendationSuggestion[];
+  taskSuggestions: TaskRecommendationSuggestion[];
+}
+
+export interface CalendarRecommendationTrigger {
+  context: OverwhelmContextPayload;
+  cause: OverwhelmCause;
+  constraints: string;
+  copiedAt: string;
+  draftMessage: string;
+}
+
 export interface SaveOverwhelmSessionInput {
   source: OverwhelmContextPayload["source"];
   itemType?: OverwhelmContextPayload["itemType"];
@@ -265,6 +397,19 @@ export interface CoachResponseMetrics {
   usedFallback: boolean;
 }
 
+export interface HealthCommunicationDraft {
+  title: string;
+  recipient: string;
+  message: string;
+}
+
+export interface HealthInterventionPlan {
+  immediateProtocol: string[];
+  workloadShaping: string[];
+  escalationAdvice: string;
+  monitoringCheckpoint: string;
+}
+
 export interface CoachChatMessage {
   role: CoachChatRole;
   content: string;
@@ -281,6 +426,22 @@ export interface CoachChatRequest {
     cause?: OverwhelmCause;
     constraints?: string;
   };
+  calendarRecommendations?: {
+    currentTime: string;
+    triggerTime: string;
+    cause?: OverwhelmCause;
+    reason?: string;
+    sourceItemId?: string;
+    sourceItemType?: OverwhelmContextPayload["itemType"];
+    sourceItemTitle?: string;
+    meetings: CalendarRecommendationMeetingInput[];
+    tasks: CalendarRecommendationTaskInput[];
+  };
+  healthIntervention?: {
+    checkIn: SaveHealthCheckInInput;
+    preferences?: UserPreferences;
+    currentTime: string;
+  };
 }
 
 export interface CoachChatResponse {
@@ -288,4 +449,6 @@ export interface CoachChatResponse {
   actions?: CoachActionCard[];
   metrics?: CoachResponseMetrics;
   overwhelmPlan?: OverwhelmPlan;
+  calendarRecommendations?: CalendarRecommendationsResponse;
+  healthInterventionPlan?: HealthInterventionPlan;
 }

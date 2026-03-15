@@ -1,6 +1,7 @@
 import { useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, CircleDot, KanbanSquare, Loader2, PauseCircle, Plus, RefreshCw, Settings, X } from "lucide-react";
+import { CircleDot, ExternalLink, KanbanSquare, Loader2, Plus, RefreshCw, Settings, X } from "lucide-react";
 import { cn, formatRelativeDue } from "../../lib/utils";
 import type { Task } from "../../types";
 import { JiraSettingsModal } from "../jira/JiraSettingsModal";
@@ -19,10 +20,16 @@ interface TaskDrawerProps {
   jiraSyncing?: boolean;
 }
 
-const energyTone: Record<Task["energy"], string> = {
-  high: "bg-rose-400/15 text-rose-200",
-  medium: "bg-amber-400/15 text-amber-200",
-  low: "bg-emerald-400/15 text-emerald-200",
+const priorityTone: Record<Task["priority"], string> = {
+  high: "border-rose-300/25 bg-rose-500/12 text-rose-100",
+  medium: "border-amber-300/25 bg-amber-500/12 text-amber-100",
+  low: "border-sky-300/25 bg-sky-500/12 text-sky-100",
+};
+
+const statusLabel: Record<Task["status"], string> = {
+  todo: "To Do",
+  "in-progress": "In Progress",
+  done: "Done",
 };
 
 export function TaskDrawer({
@@ -41,8 +48,17 @@ export function TaskDrawer({
   const [showAddInput, setShowAddInput] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [jiraSettingsOpen, setJiraSettingsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailTaskId, setDetailTaskId] = useState<string | undefined>(undefined);
   const todayTasks = tasks.filter((t) => t.status !== "done");
   const completedTasks = tasks.filter((t) => t.status === "done");
+  const detailTask = tasks.find((task) => task.id === detailTaskId);
+
+  function handleOpenTaskDetails(taskId: string) {
+    onSelectTask(taskId);
+    setDetailTaskId(taskId);
+    setDetailsOpen(true);
+  }
 
   function handleAddTask() {
     const title = newTaskTitle.trim();
@@ -215,7 +231,7 @@ export function TaskDrawer({
                     >
                       <button
                         type="button"
-                        onClick={() => onSelectTask(task.id)}
+                        onClick={() => handleOpenTaskDetails(task.id)}
                         className="w-full text-left"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -235,16 +251,23 @@ export function TaskDrawer({
                           </div>
                           <span
                             className={cn(
-                              "shrink-0 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider",
-                              energyTone[task.energy],
+                              "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider",
+                              priorityTone[task.priority],
                             )}
                           >
-                            {task.energy}
+                            {task.priority}
                           </span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          {task.jiraKey && (
+                            <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-300">
+                              {task.jiraKey}
+                            </span>
+                          )}
                         </div>
                       </button>
 
-                      <div className="mt-3 flex items-center gap-1.5">
+                      <div className="mt-3 flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => onStartFocus(task.id)}
@@ -255,26 +278,21 @@ export function TaskDrawer({
                             Focus
                           </span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => onUpdateStatus(task.id, "todo")}
-                          className="rounded-lg border border-white/8 bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/[0.06]"
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <PauseCircle className="h-3 w-3" />
-                            Later
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onUpdateStatus(task.id, "done")}
-                          className="rounded-lg border border-emerald-400/15 bg-emerald-500/8 px-3 py-1.5 text-xs text-emerald-200 transition hover:bg-emerald-500/12"
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <Check className="h-3 w-3" />
-                            Done
-                          </span>
-                        </button>
+                        <label className="inline-flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1.5">
+                          <span className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Status</span>
+                          <select
+                            value={task.status}
+                            onChange={(event) =>
+                              onUpdateStatus(task.id, event.target.value as Task["status"])
+                            }
+                            onClick={(event) => event.stopPropagation()}
+                            className="bg-transparent text-xs text-slate-100 outline-none"
+                          >
+                            <option value="todo">To Do</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="done">Done</option>
+                          </select>
+                        </label>
                       </div>
                       {task.subtasks && task.subtasks.length > 0 && (
                         <div className="mt-3 rounded-lg border border-white/5 bg-white/[0.02] p-2.5">
@@ -310,11 +328,30 @@ export function TaskDrawer({
                     {completedTasks.map((task) => (
                       <div
                         key={task.id}
-                        className="rounded-xl border border-white/5 bg-white/[0.02] p-3 opacity-50"
+                        className="rounded-xl border border-white/5 bg-white/[0.02] p-3 opacity-60"
                       >
-                        <p className="text-sm text-slate-400 line-through">
-                          {task.title}
-                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTaskDetails(task.id)}
+                          className="w-full text-left"
+                        >
+                          <p className="text-sm text-slate-400 line-through">{task.title}</p>
+                        </button>
+                        <label className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1.5">
+                          <span className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Status</span>
+                          <select
+                            value={task.status}
+                            onChange={(event) =>
+                              onUpdateStatus(task.id, event.target.value as Task["status"])
+                            }
+                            onClick={(event) => event.stopPropagation()}
+                            className="bg-transparent text-xs text-slate-100 outline-none"
+                          >
+                            <option value="todo">To Do</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="done">Done</option>
+                          </select>
+                        </label>
                       </div>
                     ))}
                   </div>
@@ -333,6 +370,163 @@ export function TaskDrawer({
           </>
         )}
       </AnimatePresence>
+      <Dialog.Root open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[70] bg-slate-950/70 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[71] w-[min(560px,92vw)] -translate-x-1/2 -translate-y-1/2 outline-none">
+            <div className="glass-panel-raised rounded-2xl border border-white/10">
+              <div className="flex items-start justify-between gap-4 border-b border-white/5 px-6 py-5">
+                <div className="min-w-0">
+                  <Dialog.Title className="truncate text-base font-semibold text-white">
+                    {detailTask?.title ?? "Task details"}
+                  </Dialog.Title>
+                  {detailTask && (
+                    <Dialog.Description className="mt-1 text-xs text-slate-400">
+                      {detailTask.source} · {detailTask.estimate} min · {formatRelativeDue(detailTask.dueAt)} · status:{" "}
+                      {detailTask.status}
+                    </Dialog.Description>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {detailTask && (
+                    <>
+                      <span
+                        className={cn(
+                          "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider",
+                          priorityTone[detailTask.priority],
+                        )}
+                      >
+                        {detailTask.priority}
+                      </span>
+                    </>
+                  )}
+                  <Dialog.Close className="rounded-lg p-2 text-slate-400 transition hover:bg-white/5 hover:text-slate-200">
+                    <X className="h-4 w-4" />
+                  </Dialog.Close>
+                </div>
+              </div>
+
+              <div className="max-h-[65vh] space-y-3 overflow-y-auto soft-scrollbar px-6 py-5">
+                {detailTask && (
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Status</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onUpdateStatus(detailTask.id, "todo")}
+                        className={cn(
+                          "rounded-lg border px-3 py-1.5 text-xs transition",
+                          detailTask.status === "todo"
+                            ? "border-white/20 bg-white/10 text-white"
+                            : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]",
+                        )}
+                      >
+                        To Do
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateStatus(detailTask.id, "in-progress")}
+                        className={cn(
+                          "rounded-lg border px-3 py-1.5 text-xs transition",
+                          detailTask.status === "in-progress"
+                            ? "border-indigo-300/35 bg-indigo-500/18 text-indigo-100"
+                            : "border-indigo-400/20 bg-indigo-500/8 text-indigo-200 hover:bg-indigo-500/14",
+                        )}
+                      >
+                        In Progress
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateStatus(detailTask.id, "done")}
+                        className={cn(
+                          "rounded-lg border px-3 py-1.5 text-xs transition",
+                          detailTask.status === "done"
+                            ? "border-emerald-300/30 bg-emerald-500/18 text-emerald-100"
+                            : "border-emerald-400/15 bg-emerald-500/8 text-emerald-200 hover:bg-emerald-500/12",
+                        )}
+                      >
+                        Done
+                      </button>
+                      <span className="text-xs text-slate-400">Current: {statusLabel[detailTask.status]}</span>
+                    </div>
+                  </div>
+                )}
+                {detailTask?.jiraKey && (
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Jira</p>
+                    <div className="mt-1.5 flex items-center justify-between gap-3">
+                      <p className="text-xs text-slate-200">{detailTask.jiraKey}</p>
+                      {detailTask.jiraUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.clarity) {
+                              void window.clarity.openExternal(detailTask.jiraUrl);
+                            } else {
+                              window.open(detailTask.jiraUrl, "_blank");
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-slate-200 transition hover:bg-white/5"
+                        >
+                          Open in Jira
+                          <ExternalLink className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {(detailTask?.description || detailTask?.notes) && (
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Description</p>
+                    <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-slate-200/90">
+                      {detailTask.description || detailTask.notes}
+                    </p>
+                  </div>
+                )}
+
+                {detailTask?.subtasks && detailTask.subtasks.length > 0 && (
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                      Subtasks · {detailTask.subtasks.filter((item) => item.done).length}/{detailTask.subtasks.length}
+                    </p>
+                    <div className="mt-2 space-y-1.5">
+                      {detailTask.subtasks.map((subtask) => (
+                        <p
+                          key={subtask.id}
+                          className={cn(
+                            "text-xs",
+                            subtask.done ? "text-emerald-300/80 line-through" : "text-slate-200",
+                          )}
+                        >
+                          {subtask.title}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(detailTask?.ownerName || detailTask?.ownerContact || detailTask?.escalationContact) && (
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">People</p>
+                    {detailTask.ownerName && (
+                      <p className="mt-1.5 text-xs text-slate-200">
+                        Owner: {detailTask.ownerName}
+                        {detailTask.ownerContact ? ` (${detailTask.ownerContact})` : ""}
+                      </p>
+                    )}
+                    {detailTask.escalationContact && (
+                      <p className="mt-1 text-xs text-slate-200">
+                        Escalation: {detailTask.escalationContact}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <JiraSettingsModal
         open={jiraSettingsOpen}
         onOpenChange={setJiraSettingsOpen}

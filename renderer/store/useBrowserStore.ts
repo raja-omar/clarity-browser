@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import type { AppBootstrap, Bookmark, BrowserTab, CoachContextPayload } from "../types";
+import type {
+  AppBootstrap,
+  Bookmark,
+  BrowserTab,
+  CalendarRecommendationsResponse,
+  CoachContextPayload,
+} from "../types";
 
 interface BrowserState {
   tabs: BrowserTab[];
@@ -41,6 +47,7 @@ interface BrowserState {
   closeTab: (tabId: string) => void;
   addTab: () => void;
   openCoachTab: (context: CoachContextPayload) => void;
+  openCalendarRecommendationsTab: (payload: CalendarRecommendationsResponse) => void;
 }
 
 function normalizeInput(value: string): string {
@@ -476,6 +483,31 @@ export const useBrowserStore = create<BrowserState>((set) => ({
         activeGroupTabId: id,
         groups: getUniqueGroups([...state.tabs, coachTab], [...state.groups, "Coach"]),
         activeGroup: "Coach",
+      };
+    }),
+  openCalendarRecommendationsTab: (payload) =>
+    set((state) => {
+      const targetGroup = state.activeSection === "group" ? state.activeGroup : undefined;
+      const id = `calendar-suggestions-${Date.now()}`;
+      const tab: BrowserTab = {
+        id,
+        title: "Calendar Suggestions",
+        url: "clarity://calendar-suggestions",
+        icon: "CalendarClock",
+        group: targetGroup,
+        context: "calendar_recommendations",
+        calendarRecommendationsData: payload,
+      };
+      return {
+        tabs: [...state.tabs, tab],
+        activeSection: state.activeSection,
+        activeGroupTabId: targetGroup ? id : state.activeGroupTabId,
+        activeHomeTabId: targetGroup ? state.activeHomeTabId : id,
+        groups: getUniqueGroups(
+          [...state.tabs, tab],
+          targetGroup ? [...state.groups, targetGroup] : state.groups,
+        ),
+        activeGroup: targetGroup ?? state.activeGroup,
       };
     }),
 }));

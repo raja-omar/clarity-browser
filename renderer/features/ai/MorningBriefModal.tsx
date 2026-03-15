@@ -6,6 +6,7 @@ import type { EnergyLog, Meeting, ScheduleBlock, Task } from "../../types";
 interface MorningBriefModalProps {
   open: boolean;
   onClose: () => void;
+  onStartDay: () => void;
   tasks: Task[];
   meetings: Meeting[];
   schedule: ScheduleBlock[];
@@ -21,6 +22,7 @@ const energyColor: Record<string, string> = {
 export function MorningBriefModal({
   open,
   onClose,
+  onStartDay,
   tasks,
   meetings,
   schedule,
@@ -139,7 +141,7 @@ export function MorningBriefModal({
             <div className="mt-6 border-t border-white/5 px-7 py-5">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={onStartDay}
                 className="w-full rounded-xl bg-indigo-500/15 py-3 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/20"
               >
                 Start your day

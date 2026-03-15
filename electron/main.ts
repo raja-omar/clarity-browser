@@ -1,5 +1,11 @@
 import { app, ipcMain, shell } from "electron";
 import { chatWithCoach, hasConfiguredOpenAIKey, saveOpenAIApiKey } from "./aiCoach";
+import { connectGoogleCalendar } from "./googleAuth";
+import {
+  disconnectGoogleCalendar,
+  getGoogleCalendarStatus,
+  syncGoogleCalendar,
+} from "./googleCalendar";
 import {
   getAllTasks,
   getJiraSettings,
@@ -13,6 +19,8 @@ import {
   saveEnergyLog,
   type DatabaseClient,
   listOverwhelmSessions,
+  listHealthCheckIns,
+  saveHealthCheckIn,
   updateMeetingSupport,
   updateTaskStatus,
   upsertJiraTasks,
@@ -22,10 +30,12 @@ import type {
   CoachChatRequest,
   CreateMeetingInput,
   CreateTaskInput,
+  GoogleCalendarSyncWindow,
   JiraSettings,
   UpdateMeetingSupportInput,
   UserPreferences,
   SaveOverwhelmSessionInput,
+  SaveHealthCheckInInput,
 } from "../renderer/types";
 import { createMainWindow } from "./windowManager";
 
@@ -74,6 +84,14 @@ function registerIpc(): void {
       }
     },
   );
+
+  ipcMain.handle("clarity:save-health-checkin", (_event, payload: SaveHealthCheckInInput) => {
+    return saveHealthCheckIn(getDatabase(), payload);
+  });
+
+  ipcMain.handle("clarity:list-health-checkins", (_event, limit?: number) => {
+    return listHealthCheckIns(getDatabase(), limit);
+  });
 
   ipcMain.handle("clarity:create-task", (_event, payload: CreateTaskInput) => {
     return createTask(getDatabase(), payload);
@@ -134,6 +152,23 @@ function registerIpc(): void {
 
   ipcMain.handle("clarity:has-openai-key", () =>
     hasConfiguredOpenAIKey(app.getPath("userData")),
+  );
+
+  ipcMain.handle("clarity:get-google-calendar-status", () =>
+    getGoogleCalendarStatus(app.getPath("userData")),
+  );
+
+  ipcMain.handle("clarity:connect-google-calendar", async () => {
+    await connectGoogleCalendar();
+    return getGoogleCalendarStatus(app.getPath("userData"));
+  });
+
+  ipcMain.handle("clarity:disconnect-google-calendar", () =>
+    disconnectGoogleCalendar(app.getPath("userData")),
+  );
+
+  ipcMain.handle("clarity:sync-google-calendar", (_event, window: GoogleCalendarSyncWindow) =>
+    syncGoogleCalendar(app.getPath("userData"), window),
   );
 
   ipcMain.handle("clarity:save-overwhelm-session", (_event, payload: SaveOverwhelmSessionInput) =>

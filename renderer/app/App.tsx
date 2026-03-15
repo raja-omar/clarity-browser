@@ -5,23 +5,38 @@ import { ClarityLayout } from "./layout/ClarityLayout";
 import { AddTaskModal } from "../features/tasks/AddTaskModal";
 import { AddMeetingModal } from "../features/calendar/AddMeetingModal";
 import { PersonalizationWizard } from "../features/onboarding/PersonalizationWizard";
+import type { MorningStartInput } from "../features/onboarding/PersonalizationWizard";
 import { useBrowserStore } from "../store/useBrowserStore";
 import { useTaskStore } from "../store/useTaskStore";
 import { useCalendarStore } from "../store/useCalendarStore";
 import { useEnergyStore } from "../store/useEnergyStore";
 import type {
+  CalendarRecommendationMeetingInput,
+  CalendarRecommendationTaskInput,
   CreateMeetingInput,
   CreateTaskInput,
+  CalendarRecommendationTrigger,
   EnergyLevel,
+  GoogleCalendarStatus,
+  GoogleCalendarSyncWindow,
+  HealthCheckIn,
+  HealthInterventionPlan,
   Meeting,
+  SaveHealthCheckInInput,
   UpdateMeetingSupportInput,
   UserPreferences,
 } from "../types";
 import type { CoachContextPayload } from "../types";
 import {
+  collectHealthCheckInReminder,
+  computeNextHealthCheckInDueAt,
   collectDueSoonReminders,
+  getProjectedHealthSchedule,
+  isWithinHealthWindow,
   type DueSoonReminder,
 } from "../features/notifications/reminderEngine";
+
+type StartupDemoStep = "idle" | "task" | "meeting" | "health" | "done";
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -29,6 +44,12 @@ export default function App() {
   const [addMeetingModalOpen, setAddMeetingModalOpen] = useState(false);
   const [personalizationOpen, setPersonalizationOpen] = useState(false);
   const [userPreferences, setUserPreferences] = useState<UserPreferences | undefined>(undefined);
+  const [googleCalendarStatus, setGoogleCalendarStatus] = useState<GoogleCalendarStatus>({
+    available: Boolean(window.clarity),
+    connected: false,
+  });
+  const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
+  const [googleMeetings, setGoogleMeetings] = useState<Meeting[]>([]);
 
   const {
     tabs,
@@ -69,6 +90,7 @@ export default function App() {
     closeTab,
     addTab,
     openCoachTab,
+    openCalendarRecommendationsTab,
   } = useBrowserStore();
 
   const {
@@ -92,6 +114,7 @@ export default function App() {
   } = useCalendarStore();
 
   const { logs, initialize: initializeEnergy, saveLog } = useEnergyStore();
+  const allMeetings = useMemo(() => mergeMeetings(meetings, googleMeetings), [googleMeetings, meetings]);
 
   useEffect(() => {
     async function bootstrap() {
@@ -104,6 +127,26 @@ export default function App() {
       initializeCalendar(payload);
       initializeEnergy(payload);
       setUserPreferences(payload.userPreferences);
+      setHealthCheckIns(payload.healthCheckIns ?? []);
+
+      if (window.clarity) {
+        try {
+          const status = await window.clarity.getGoogleCalendarStatus();
+          setGoogleCalendarStatus(status);
+
+          if (status.connected) {
+            const syncResult = await window.clarity.syncGoogleCalendar(getCurrentWeekWindow());
+            setGoogleMeetings(syncResult.meetings);
+            setGoogleCalendarStatus(syncResult.status);
+          }
+        } catch (error) {
+          setGoogleCalendarStatus((current) => ({
+            ...current,
+            error: error instanceof Error ? error.message : "Unable to load Google Calendar.",
+          }));
+        }
+      }
+
       setLoading(false);
     }
 
@@ -112,18 +155,32 @@ export default function App() {
 
   useEffect(() => {
     if (loading) return;
-    recomputeSchedule(tasks, logs[0]);
-  }, [loading, logs, meetings, recomputeSchedule, tasks]);
+    recomputeSchedule(tasks, logs[0], allMeetings);
+  }, [allMeetings, loading, logs, recomputeSchedule, tasks]);
 
   const [morningBriefOpen, setMorningBriefOpen] = useState(false);
+  const [healthCheckInOpen, setHealthCheckInOpen] = useState(false);
+  const [healthCheckIns, setHealthCheckIns] = useState<HealthCheckIn[]>([]);
+  const [healthCheckInSubmitting, setHealthCheckInSubmitting] = useState(false);
+  const [healthInterventionPlan, setHealthInterventionPlan] = useState<
+    HealthInterventionPlan | undefined
+  >(undefined);
+  const [healthInterventionLoading, setHealthInterventionLoading] = useState(false);
+  const [nextHealthCheckInDueAt, setNextHealthCheckInDueAt] = useState<string | undefined>(undefined);
   const [dueSoonReminder, setDueSoonReminder] = useState<DueSoonReminder | undefined>(undefined);
+  const [calendarScanNotice, setCalendarScanNotice] = useState<string | undefined>(undefined);
   const [pendingReminders, setPendingReminders] = useState<DueSoonReminder[]>([]);
   const [testMeetingDetails, setTestMeetingDetails] = useState<Meeting | undefined>(undefined);
+  const [startupDemoStep, setStartupDemoStep] = useState<StartupDemoStep>("idle");
   const seenReminderKeys = useRef(new Set<string>());
+  const seenHealthReminderKeys = useRef(new Set<string>());
+  const completedHealthCheckInRef = useRef(false);
+  const startupWizardPromptedRef = useRef(false);
+  const startupDemoStartedRef = useRef(false);
   const lastReminderScan = useRef<Date | undefined>(undefined);
 
   useEffect(() => {
-    if (loading || morningBriefShown) return;
+    if (loading || morningBriefShown || healthCheckInOpen || personalizationOpen) return;
 
     const timer = setTimeout(() => {
       setMorningBriefOpen(true);
@@ -131,22 +188,27 @@ export default function App() {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [loading, morningBriefShown, setMorningBriefShown]);
+  }, [healthCheckInOpen, loading, morningBriefShown, personalizationOpen, setMorningBriefShown]);
 
   useEffect(() => {
-    if (!loading && !userPreferences) {
+    if (loading || startupWizardPromptedRef.current) return;
+    startupWizardPromptedRef.current = true;
+    if (!healthCheckInOpen) {
       setPersonalizationOpen(true);
     }
-  }, [loading, userPreferences]);
+  }, [healthCheckInOpen, loading]);
 
   useEffect(() => {
     if (loading) return;
 
     const tick = () => {
       const now = new Date();
-      const reminders = collectDueSoonReminders(tasks, meetings, now, lastReminderScan.current);
+      const reminders = collectDueSoonReminders(tasks, allMeetings, now, lastReminderScan.current);
+      const healthReminder = isWithinHealthWindow(now, userPreferences)
+        ? collectHealthCheckInReminder(nextHealthCheckInDueAt, now, lastReminderScan.current)
+        : undefined;
       lastReminderScan.current = now;
-      if (reminders.length === 0) return;
+      if (reminders.length === 0 && !healthReminder) return;
 
       setPendingReminders((current) => {
         const existing = new Set(current.map((item) => item.key));
@@ -160,12 +222,59 @@ export default function App() {
         }
         return next;
       });
+
+      if (healthReminder && !healthCheckInOpen && !seenHealthReminderKeys.current.has(healthReminder.key)) {
+        seenHealthReminderKeys.current.add(healthReminder.key);
+        completedHealthCheckInRef.current = false;
+        setHealthInterventionPlan(undefined);
+        setHealthCheckInOpen(true);
+      }
     };
 
     tick();
-    const interval = setInterval(tick, 30000);
+    const interval = setInterval(tick, 30_000);
     return () => clearInterval(interval);
-  }, [dueSoonReminder?.key, loading, meetings, tasks]);
+  }, [
+    allMeetings,
+    dueSoonReminder?.key,
+    healthCheckInOpen,
+    loading,
+    nextHealthCheckInDueAt,
+    tasks,
+    userPreferences,
+  ]);
+
+  useEffect(() => {
+    if (loading) return;
+    setNextHealthCheckInDueAt((current) => {
+      if (current) return current;
+      return computeNextHealthCheckInDueAt({
+        now: new Date(),
+        preferences: userPreferences,
+        recentCheckIns: healthCheckIns,
+        reason: "startup",
+      });
+    });
+  }, [healthCheckIns, loading, userPreferences]);
+
+  useEffect(() => {
+    if (!calendarDrawerOpen || !window.clarity || !googleCalendarStatus.connected || googleCalendarBusy) {
+      return;
+    }
+
+    const lastSynced = googleCalendarStatus.lastSyncedAt
+      ? new Date(googleCalendarStatus.lastSyncedAt).getTime()
+      : 0;
+
+    if (!lastSynced || Date.now() - lastSynced > 5 * 60 * 1000) {
+      void handleRefreshGoogleCalendar();
+    }
+  }, [
+    calendarDrawerOpen,
+    googleCalendarBusy,
+    googleCalendarStatus.connected,
+    googleCalendarStatus.lastSyncedAt,
+  ]);
 
   useEffect(() => {
     if (dueSoonReminder || pendingReminders.length === 0) return;
@@ -229,6 +338,10 @@ export default function App() {
     () => tasks.find((task) => task.id === selectedTaskId),
     [selectedTaskId, tasks],
   );
+  const projectedHealthSchedule = useMemo(
+    () => getProjectedHealthSchedule(userPreferences, healthCheckIns),
+    [healthCheckIns, userPreferences],
+  );
 
   async function handleLogEnergy(energy: EnergyLevel) {
     await saveLog({
@@ -278,32 +391,347 @@ export default function App() {
     return resolvedMeeting;
   }
 
-  async function handleSavePreferences(payload: UserPreferences): Promise<void> {
+  async function handleSavePreferences(
+    payload: UserPreferences,
+    morning: MorningStartInput,
+  ): Promise<void> {
+    const enrichedPayload: UserPreferences = {
+      ...payload,
+      baselineSleepHours: morning.sleepLastNight,
+      baselineMood: morning.startingMood,
+      nutritionRhythm:
+        morning.morningFood === "none"
+          ? "irregular"
+          : morning.morningFood === "light"
+            ? "two_meals"
+            : "three_meals",
+      hydrationHabit:
+        morning.hydrationNow === "dehydrated"
+          ? "rarely"
+          : morning.hydrationNow === "a_bit_low"
+            ? "some"
+            : "consistent",
+    };
     const saved = window.clarity
-      ? await window.clarity.saveUserPreferences(payload)
-      : payload;
+      ? await window.clarity.saveUserPreferences(enrichedPayload)
+      : enrichedPayload;
     setUserPreferences(saved);
+    await saveLog({
+      sleepHours: mapSleepBucketToHours(morning.sleepLastNight),
+      mood: mapMoodToScale(morning.startingMood),
+      energy: morning.startingEnergy,
+    });
+
+    const morningCheckIn: SaveHealthCheckInInput = {
+      currentMood: morning.startingMood,
+      focusLevel:
+        morning.startingEnergy === "high"
+          ? "focused"
+          : morning.startingEnergy === "medium"
+            ? "somewhat_focused"
+            : "scattered",
+      energyLevel: morning.startingEnergy,
+      lastMealRecency:
+        morning.morningFood === "none"
+          ? "over_6h"
+          : morning.morningFood === "light"
+            ? "4_to_6h"
+            : "under_2h",
+      hydrationStatus: morning.hydrationNow,
+      symptoms: ["none"],
+    };
+    const entry = window.clarity
+      ? await window.clarity.saveHealthCheckIn(morningCheckIn)
+      : {
+          id: `health-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          ...morningCheckIn,
+        };
+    setHealthCheckIns((current) => [entry, ...current].slice(0, 20));
+    setNextHealthCheckInDueAt(
+      computeNextHealthCheckInDueAt({
+        now: new Date(),
+        preferences: saved,
+        recentCheckIns: [entry, ...healthCheckIns].slice(0, 20),
+        reason: "completed",
+      }),
+    );
+  }
+
+function mapSleepBucketToHours(value: MorningStartInput["sleepLastNight"]): number {
+  switch (value) {
+    case "under_5":
+      return 4.5;
+    case "5_to_6":
+      return 5.5;
+    case "6_to_7":
+      return 6.5;
+    case "7_to_8":
+      return 7.5;
+    case "8_plus":
+      return 8.5;
+    default:
+      return 7;
+  }
+}
+
+function mapMoodToScale(value: MorningStartInput["startingMood"]): number {
+  switch (value) {
+    case "very_low":
+      return 1;
+    case "low":
+      return 2;
+    case "okay":
+      return 3;
+    case "good":
+      return 4;
+    case "great":
+      return 5;
+    default:
+      return 3;
+  }
+}
+
+  async function handleSubmitHealthCheckIn(payload: SaveHealthCheckInInput): Promise<void> {
+    setHealthCheckInSubmitting(true);
+    setHealthInterventionLoading(true);
+    try {
+      const entry = window.clarity
+        ? await window.clarity.saveHealthCheckIn(payload)
+        : {
+            id: `health-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            ...payload,
+          };
+      setHealthCheckIns((current) => [entry, ...current].slice(0, 20));
+      completedHealthCheckInRef.current = true;
+
+      if (window.clarity?.chatWithCoach) {
+        const response = await window.clarity.chatWithCoach({
+          mode: "health_interventions",
+          messages: [
+            {
+              role: "user",
+              content: "Generate a practical support plan focused on remedies first.",
+            },
+          ],
+          healthIntervention: {
+            checkIn: payload,
+            preferences: userPreferences,
+            currentTime: new Date().toISOString(),
+          },
+        });
+        setHealthInterventionPlan(response.healthInterventionPlan);
+      } else {
+        setHealthInterventionPlan(undefined);
+      }
+      setNextHealthCheckInDueAt(
+        computeNextHealthCheckInDueAt({
+          now: new Date(),
+          preferences: userPreferences,
+          recentCheckIns: [entry, ...healthCheckIns].slice(0, 20),
+          reason: "completed",
+        }),
+      );
+    } finally {
+      setHealthCheckInSubmitting(false);
+      setHealthInterventionLoading(false);
+    }
+  }
+
+  async function handleGenerateHealthEscalationDraft(userIntent: string): Promise<string> {
+    if (!window.clarity?.chatWithCoach) {
+      throw new Error("AI coach is unavailable.");
+    }
+    const latest = healthCheckIns[0];
+    const response = await window.clarity.chatWithCoach({
+      mode: "chat",
+      context: {
+        source: "general",
+        title: "Health check-in escalation message",
+        summary: latest
+          ? `Mood=${latest.currentMood}, focus=${latest.focusLevel}, energy=${latest.energyLevel}, hydration=${latest.hydrationStatus}, meal=${latest.lastMealRecency}, symptoms=${latest.symptoms.join(", ")}`
+          : "User requested escalation guidance after health check-in.",
+      },
+      messages: [
+        {
+          role: "user",
+          content: `Draft a concise manager update message about my current health-related capacity. Follow these preferences: ${userIntent}. Keep it practical and human.`,
+        },
+      ],
+    });
+    return response.reply;
+  }
+
+  function handleHealthCheckInRecovered(): void {
+    completedHealthCheckInRef.current = true;
+    setHealthCheckInOpen(false);
   }
 
   function handleOpenCoach(context: CoachContextPayload): void {
     openCoachTab(context);
   }
 
-  function handleSnoozeDueSoonReminder(): void {
-    if (!dueSoonReminder) return;
-    const snoozed = {
-      ...dueSoonReminder,
-      key: `${dueSoonReminder.key}:snooze:${Date.now()}`,
-      dueAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      slotMinutes: 10,
-    };
-    setDueSoonReminder(undefined);
-    setPendingReminders((current) => [snoozed, ...current]);
+  function handleStartDay(): void {
+    setMorningBriefOpen(false);
+    if (startupDemoStartedRef.current) return;
+    startupDemoStartedRef.current = true;
+    setStartupDemoStep("task");
+    handleTriggerTestTaskPopup();
   }
 
-  function handleMarkHandledDueSoonReminder(): void {
-    setDueSoonReminder(undefined);
+  async function handleEscalationDraftCopied(
+    trigger: CalendarRecommendationTrigger,
+  ): Promise<void> {
+    if (!window.clarity?.chatWithCoach) return;
+    setCalendarScanNotice(
+      "Got it — based on this update, I am now scanning your calendar and task list and will suggest changes shortly.",
+    );
+    const now = new Date();
+
+    if (window.clarity && googleCalendarStatus.connected) {
+      const lastSynced = googleCalendarStatus.lastSyncedAt
+        ? new Date(googleCalendarStatus.lastSyncedAt).getTime()
+        : 0;
+      if (!lastSynced || Date.now() - lastSynced > 5 * 60 * 1000) {
+        await handleRefreshGoogleCalendar();
+      }
+    }
+
+    const upcomingToday = mergeMeetings(meetings, googleMeetings)
+      .filter((meeting) => {
+        const start = new Date(meeting.start);
+        const end = new Date(meeting.end);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+        return isSameLocalDay(start, now) && end.getTime() > now.getTime();
+      })
+      .map<CalendarRecommendationMeetingInput>((meeting) => ({
+        id: meeting.id,
+        title: meeting.title,
+        start: meeting.start,
+        end: meeting.end,
+        attendees: meeting.attendees,
+        source: meeting.source,
+        type: meeting.type,
+        isAllDay: meeting.isAllDay,
+        hostName: meeting.hostName,
+        description: meeting.description,
+        location: meeting.location,
+      }));
+    const incompleteTasks = tasks.filter((task) => task.status !== "done");
+    const tasksDueToday = incompleteTasks.filter((task) => {
+      const dueAt = task.deadline ?? task.dueAt;
+      if (!dueAt) return false;
+      const dueDate = new Date(dueAt);
+      if (Number.isNaN(dueDate.getTime())) return false;
+      return isSameLocalDay(dueDate, now);
+    });
+    const taskInputs = (tasksDueToday.length > 0 ? tasksDueToday : incompleteTasks.slice(0, 6)).map<
+      CalendarRecommendationTaskInput
+    >((task) => ({
+      id: task.id,
+      title: task.title,
+      priority: task.priority,
+      status: task.status,
+      dueAt: task.dueAt,
+      deadline: task.deadline,
+      estimatedTimeMinutes: task.estimatedTimeMinutes ?? task.estimate,
+      description: task.description ?? task.notes,
+    }));
+
+    const response = await window.clarity.chatWithCoach({
+      mode: "calendar_recommendations",
+      messages: [
+        {
+          role: "user",
+          content:
+            "I have escalated that I am delayed. Suggest what to change in the rest of my day based on my reason.",
+        },
+      ],
+      calendarRecommendations: {
+        currentTime: now.toISOString(),
+        triggerTime: trigger.copiedAt,
+        cause: trigger.cause,
+        reason: trigger.constraints,
+        sourceItemId: trigger.context.itemId,
+        sourceItemType: trigger.context.itemType,
+        sourceItemTitle: trigger.context.itemTitle,
+        meetings: upcomingToday,
+        tasks: taskInputs,
+      },
+    });
+
+    if (response.calendarRecommendations) {
+      openCalendarRecommendationsTab(response.calendarRecommendations);
+    }
   }
+
+  async function handleRefreshGoogleCalendar(): Promise<void> {
+    if (!window.clarity || !googleCalendarStatus.connected) return;
+
+    setGoogleCalendarBusy(true);
+    try {
+      const syncResult = await window.clarity.syncGoogleCalendar(getCurrentWeekWindow());
+      setGoogleMeetings(syncResult.meetings);
+      setGoogleCalendarStatus(syncResult.status);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to refresh Google Calendar meetings.";
+      const latestStatus = await window.clarity
+        .getGoogleCalendarStatus()
+        .catch(() => googleCalendarStatus);
+      setGoogleCalendarStatus({ ...latestStatus, error: message });
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  }
+
+  async function handleConnectGoogleCalendar(): Promise<void> {
+    if (!window.clarity) return;
+
+    setGoogleCalendarBusy(true);
+    try {
+      const status = await window.clarity.connectGoogleCalendar();
+      setGoogleCalendarStatus(status);
+
+      if (status.connected) {
+        const syncResult = await window.clarity.syncGoogleCalendar(getCurrentWeekWindow());
+        setGoogleMeetings(syncResult.meetings);
+        setGoogleCalendarStatus(syncResult.status);
+      }
+    } catch (error) {
+      setGoogleCalendarStatus((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : "Unable to connect Google Calendar.",
+      }));
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  }
+
+  async function handleDisconnectGoogleCalendar(): Promise<void> {
+    if (!window.clarity) return;
+
+    setGoogleCalendarBusy(true);
+    try {
+      const status = await window.clarity.disconnectGoogleCalendar();
+      setGoogleMeetings([]);
+      setGoogleCalendarStatus(status);
+    } catch (error) {
+      setGoogleCalendarStatus((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : "Unable to disconnect Google Calendar.",
+      }));
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!calendarScanNotice) return;
+    const timer = setTimeout(() => setCalendarScanNotice(undefined), 4200);
+    return () => clearTimeout(timer);
+  }, [calendarScanNotice]);
 
   function handleTriggerTestTaskPopup(): void {
     const now = Date.now();
@@ -351,6 +779,25 @@ export default function App() {
     setTestMeetingDetails(meeting);
   }
 
+  function handleCloseDueSoonReminder(): void {
+    const closingReminder = dueSoonReminder;
+    setDueSoonReminder(undefined);
+    if (!closingReminder) return;
+
+    if (startupDemoStep === "task" && closingReminder.itemType === "task") {
+      setStartupDemoStep("meeting");
+      handleTriggerTestMeetingPopup();
+      return;
+    }
+
+    if (startupDemoStep === "meeting" && closingReminder.itemType === "meeting") {
+      setStartupDemoStep("health");
+      completedHealthCheckInRef.current = false;
+      setHealthInterventionPlan(undefined);
+      setHealthCheckInOpen(true);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -379,12 +826,15 @@ export default function App() {
         calendarDrawerOpen={calendarDrawerOpen}
         contextDrawerOpen={contextDrawerOpen}
         morningBriefOpen={morningBriefOpen}
+        healthCheckInOpen={healthCheckInOpen}
         sidebarCollapsed={sidebarCollapsed}
         tasks={tasks}
         selectedTask={selectedTask}
-        meetings={meetings}
+        meetings={allMeetings}
         schedule={schedule}
         energyLogs={logs}
+        googleCalendarStatus={googleCalendarStatus}
+        googleCalendarBusy={googleCalendarBusy}
         onSelectTab={setActiveTab}
         onSelectHome={setActiveHome}
         onSelectGroup={setActiveGroup}
@@ -409,6 +859,27 @@ export default function App() {
         onSetCalendarDrawer={setCalendarDrawerOpen}
         onSetContextDrawer={setContextDrawerOpen}
         onSetMorningBrief={(open) => setMorningBriefOpen(open)}
+        onStartDay={handleStartDay}
+        onSetHealthCheckIn={(open) => {
+          setHealthCheckInOpen(open);
+          if (!open) {
+            const reason = completedHealthCheckInRef.current ? "completed" : "dismissed";
+            setNextHealthCheckInDueAt(
+              computeNextHealthCheckInDueAt({
+                now: new Date(),
+                preferences: userPreferences,
+                recentCheckIns: healthCheckIns,
+                reason,
+              }),
+            );
+            completedHealthCheckInRef.current = false;
+            setHealthInterventionPlan(undefined);
+            setHealthInterventionLoading(false);
+            if (startupDemoStep === "health") {
+              setStartupDemoStep("done");
+            }
+          }
+        }}
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         onCloseTab={closeTab}
         onNewTab={addTab}
@@ -416,18 +887,31 @@ export default function App() {
         onOpenAddTaskModal={() => setAddTaskModalOpen(true)}
         onOpenAddMeetingModal={() => setAddMeetingModalOpen(true)}
         onOpenPersonalization={() => setPersonalizationOpen(true)}
-        onOpenHealthCheckIn={() => setMorningBriefOpen(true)}
+        onOpenHealthCheckIn={() => {
+          completedHealthCheckInRef.current = false;
+          setHealthInterventionPlan(undefined);
+          setHealthCheckInOpen(true);
+        }}
+        onSubmitHealthCheckIn={handleSubmitHealthCheckIn}
+        onGenerateHealthEscalationDraft={handleGenerateHealthEscalationDraft}
+        onHealthCheckInRecovered={handleHealthCheckInRecovered}
+        healthCheckInSubmitting={healthCheckInSubmitting}
+        healthInterventionPlan={healthInterventionPlan}
+        healthInterventionLoading={healthInterventionLoading}
+        projectedHealthIntervalMinutes={projectedHealthSchedule.intervalMinutes}
+        projectedHealthTimes={projectedHealthSchedule.times}
         onSyncJira={() => void syncJira()}
         jiraSyncing={jiraSyncing}
         dueSoonReminder={dueSoonReminder}
         dueSoonReminderOpen={Boolean(dueSoonReminder)}
-        onCloseDueSoonReminder={() => setDueSoonReminder(undefined)}
-        onSnoozeDueSoonReminder={handleSnoozeDueSoonReminder}
-        onMarkHandledDueSoonReminder={handleMarkHandledDueSoonReminder}
+        calendarScanNotice={calendarScanNotice}
+        onCloseDueSoonReminder={handleCloseDueSoonReminder}
         onOpenCoach={handleOpenCoach}
         onUpdateMeetingSupport={handleUpdateMeetingSupport}
-        onTriggerTestTaskPopup={handleTriggerTestTaskPopup}
-        onTriggerTestMeetingPopup={handleTriggerTestMeetingPopup}
+        onEscalationDraftCopied={(payload) => void handleEscalationDraftCopied(payload)}
+        onConnectGoogleCalendar={() => void handleConnectGoogleCalendar()}
+        onRefreshGoogleCalendar={() => void handleRefreshGoogleCalendar()}
+        onDisconnectGoogleCalendar={() => void handleDisconnectGoogleCalendar()}
       />
       <AddTaskModal
         open={addTaskModalOpen}
@@ -467,4 +951,33 @@ function buildTestMeeting(now: number, existing?: Meeting): Meeting {
     prepChecklist: existing?.prepChecklist ?? [],
     rescheduleEmailDraft: existing?.rescheduleEmailDraft,
   };
+}
+
+function getCurrentWeekWindow(now = new Date()): GoogleCalendarSyncWindow {
+  const start = new Date(now);
+  const dayOffset = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - dayOffset - 7);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 21);
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+}
+
+function mergeMeetings(localMeetings: Meeting[], syncedMeetings: Meeting[]): Meeting[] {
+  return [...localMeetings, ...syncedMeetings].sort(
+    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
+  );
+}
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }

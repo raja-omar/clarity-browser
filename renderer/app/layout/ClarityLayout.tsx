@@ -24,6 +24,9 @@ import type { DueSoonReminder } from "../../features/notifications/reminderEngin
 
 interface ClarityLayoutProps {
   tabs: BrowserTab[];
+  groups: string[];
+  activeSection: "home" | "group";
+  activeGroup?: string;
   bookmarks: Bookmark[];
   activeTab?: BrowserTab;
   reliefMode: boolean;
@@ -41,6 +44,14 @@ interface ClarityLayoutProps {
   schedule: ScheduleBlock[];
   energyLogs: EnergyLog[];
   onSelectTab: (tabId: string) => void;
+  onSelectHome: () => void;
+  onSelectGroup: (group: string) => void;
+  onCreateGroup: (group: string) => void;
+  onRenameGroup: (fromGroup: string, toGroup: string) => void;
+  onMoveTabToGroup: (tabId: string, group: string) => void;
+  onAddBookmarkFromTab: (tabId: string) => void;
+  onRemoveBookmark: (bookmarkId: string) => void;
+  onToggleBookmarkFromTab: (tabId: string) => void;
   onNavigate: (value: string) => void;
   onToggleReliefMode: () => void;
   onOpenCommandPalette: () => void;
@@ -74,6 +85,9 @@ interface ClarityLayoutProps {
 
 export function ClarityLayout({
   tabs,
+  groups,
+  activeSection,
+  activeGroup,
   bookmarks,
   activeTab,
   reliefMode,
@@ -91,6 +105,14 @@ export function ClarityLayout({
   schedule,
   energyLogs,
   onSelectTab,
+  onSelectHome,
+  onSelectGroup,
+  onCreateGroup,
+  onRenameGroup,
+  onMoveTabToGroup,
+  onAddBookmarkFromTab,
+  onRemoveBookmark,
+  onToggleBookmarkFromTab,
   onNavigate,
   onToggleReliefMode,
   onOpenCommandPalette,
@@ -122,6 +144,9 @@ export function ClarityLayout({
   onTriggerTestMeetingPopup,
 }: ClarityLayoutProps) {
   const viewportRef = useRef<BrowserViewportHandle>(null);
+  const visibleTabs = tabs.filter((tab) =>
+    activeSection === "home" ? !tab.group?.trim() : tab.group?.trim() === activeGroup,
+  );
 
   function handleStartFocus(taskId: string) {
     onSelectTask(taskId);
@@ -134,10 +159,15 @@ export function ClarityLayout({
       <div className="flex h-screen gap-3 p-3">
         <Sidebar
           tabs={tabs}
-          activeTabId={activeTab?.id}
+          groups={groups}
+          activeSection={activeSection}
+          activeGroup={activeGroup}
           collapsed={sidebarCollapsed}
           focusMode={focusModeActive}
-          onSelectTab={onSelectTab}
+          onSelectHome={onSelectHome}
+          onSelectGroup={onSelectGroup}
+          onCreateGroup={onCreateGroup}
+          onRenameGroup={onRenameGroup}
           onOpenCommandPalette={onOpenCommandPalette}
           onOpenTasks={() => onSetTaskDrawer(true)}
           onOpenCalendar={() => onSetCalendarDrawer(true)}
@@ -150,11 +180,13 @@ export function ClarityLayout({
           <div className="browser-shell flex flex-1 flex-col overflow-hidden rounded-2xl">
             <div className="flex items-center gap-2 border-b border-white/5 px-3 py-2">
               <TabBar
-                tabs={tabs}
+                tabs={visibleTabs}
+                groups={groups}
                 activeTabId={activeTab?.id}
                 onSelectTab={onSelectTab}
                 onCloseTab={onCloseTab}
                 onNewTab={onNewTab}
+                onMoveTabToGroup={onMoveTabToGroup}
               />
             </div>
 
@@ -162,6 +194,9 @@ export function ClarityLayout({
               activeTab={activeTab}
               tabs={tabs}
               bookmarks={bookmarks}
+              onAddBookmarkFromActiveTab={() => activeTab && onAddBookmarkFromTab(activeTab.id)}
+              onToggleBookmarkFromActiveTab={() => activeTab && onToggleBookmarkFromTab(activeTab.id)}
+              onRemoveBookmark={onRemoveBookmark}
               onNavigate={onNavigate}
               onOpenCommandPalette={onOpenCommandPalette}
               onOpenExternal={onOpenExternal}
@@ -173,6 +208,7 @@ export function ClarityLayout({
             <BrowserViewport
               ref={viewportRef}
               activeTab={activeTab}
+              activeSection={activeSection}
               reliefMode={reliefMode}
               selectedTask={selectedTask}
             />

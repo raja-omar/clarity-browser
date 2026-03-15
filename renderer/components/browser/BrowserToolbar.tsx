@@ -1,11 +1,25 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Command, ExternalLink, RefreshCw, Search, Star } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bookmark as BookmarkIcon,
+  ChevronDown,
+  Command,
+  ExternalLink,
+  Plus,
+  RefreshCw,
+  Search,
+  Star,
+} from "lucide-react";
 import type { Bookmark, BrowserTab } from "../../types";
 
 interface BrowserToolbarProps {
   activeTab?: BrowserTab;
   tabs: BrowserTab[];
   bookmarks: Bookmark[];
+  onAddBookmarkFromActiveTab: () => void;
+  onToggleBookmarkFromActiveTab: () => void;
+  onRemoveBookmark: (bookmarkId: string) => void;
   onNavigate: (value: string) => void;
   onOpenCommandPalette: () => void;
   onOpenExternal: (url: string) => void;
@@ -18,6 +32,9 @@ export function BrowserToolbar({
   activeTab,
   tabs,
   bookmarks,
+  onAddBookmarkFromActiveTab,
+  onToggleBookmarkFromActiveTab,
+  onRemoveBookmark,
   onNavigate,
   onOpenCommandPalette,
   onOpenExternal,
@@ -28,6 +45,8 @@ export function BrowserToolbar({
   const [value, setValue] = useState(activeTab?.url ?? "");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const [bookmarkMenuOpen, setBookmarkMenuOpen] = useState(false);
+  const activeBookmark = activeTab ? bookmarks.find((bookmark) => bookmark.url === activeTab.url) : undefined;
 
   useEffect(() => {
     setValue(activeTab?.url ?? "");
@@ -115,6 +134,7 @@ export function BrowserToolbar({
     onNavigate(nextValue);
     setShowSuggestions(false);
     setActiveSuggestionIndex(-1);
+    setBookmarkMenuOpen(false);
   }
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -239,23 +259,84 @@ export function BrowserToolbar({
         >
           <Command className="h-3.5 w-3.5" />
         </button>
-        {bookmarks.slice(0, 3).map((bookmark) => (
+        <button
+          type="button"
+          onClick={onToggleBookmarkFromActiveTab}
+          disabled={!activeTab || activeTab.url.startsWith("clarity://") || activeTab.url === "about:blank"}
+          className={`rounded-lg p-1.5 transition disabled:cursor-not-allowed disabled:opacity-40 ${
+            activeBookmark
+              ? "text-amber-300 hover:bg-amber-500/10 hover:text-amber-200"
+              : "text-slate-500 hover:bg-white/5 hover:text-slate-300"
+          }`}
+          title={activeBookmark ? "Remove bookmark" : "Add bookmark"}
+        >
+          <Star className={`h-3.5 w-3.5 ${activeBookmark ? "fill-current" : ""}`} />
+        </button>
+        <div className="relative">
           <button
-            key={bookmark.id}
             type="button"
-            onClick={() => {
-              setValue(bookmark.url);
-              navigateTo(bookmark.url);
-            }}
-            title={bookmark.label}
-            className="rounded-lg px-2 py-1 text-[11px] text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+            onClick={() => setBookmarkMenuOpen((open) => !open)}
+            className="flex items-center gap-1 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1.5 text-[11px] text-slate-300 transition hover:bg-white/[0.06]"
+            title="Bookmarks"
           >
-            <span className="flex items-center gap-1">
-              <Star className="h-3 w-3" />
-              {bookmark.label}
-            </span>
+            <BookmarkIcon className="h-3.5 w-3.5" />
+            <span>Bookmarks</span>
+            <ChevronDown className="h-3.5 w-3.5" />
           </button>
-        ))}
+
+          {bookmarkMenuOpen ? (
+            <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl">
+              <button
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onAddBookmarkFromActiveTab();
+                  setBookmarkMenuOpen(false);
+                }}
+                disabled={!activeTab || activeTab.url.startsWith("clarity://") || activeTab.url === "about:blank"}
+                className="flex w-full items-center gap-2 border-b border-white/5 px-3 py-2 text-left text-xs text-slate-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add current tab to bookmarks</span>
+              </button>
+
+              <div className="max-h-64 overflow-y-auto soft-scrollbar py-1">
+                {bookmarks.length > 0 ? (
+                  bookmarks.map((bookmark) => (
+                    <button
+                      key={bookmark.id}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        setValue(bookmark.url);
+                        navigateTo(bookmark.url);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        onRemoveBookmark(bookmark.id);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/5"
+                      title="Click to open, right-click to delete"
+                    >
+                      <BookmarkIcon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-slate-100">{bookmark.label}</span>
+                        <span className="block truncate text-[10px] text-slate-500">{bookmark.url}</span>
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-3 text-xs text-slate-500">No bookmarks yet.</div>
+                )}
+              </div>
+              {bookmarks.length > 0 ? (
+                <div className="border-t border-white/5 px-3 py-2 text-[10px] text-slate-500">
+                  Right-click a bookmark to delete it.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         <button
           type="button"
           onClick={() =>

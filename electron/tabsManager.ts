@@ -7,15 +7,6 @@ export function createStarterTabs(): {
   return {
     tabs: [
       {
-        id: "tab-dashboard",
-        title: "Clarity Home",
-        url: "https://example.com",
-        icon: "Sparkles",
-        pinned: true,
-        group: "Today",
-        context: "focus",
-      },
-      {
         id: "tab-jira",
         title: "Sprint Board",
         url: "https://jira.atlassian.com",

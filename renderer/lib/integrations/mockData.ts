@@ -47,12 +47,20 @@ export function createFallbackBootstrap(): AppBootstrap {
   return {
     tabs: [
       {
-        id: "mock-home",
-        title: "Clarity Home",
-        url: "https://example.com",
-        icon: "Sparkles",
-        pinned: true,
-        context: "focus",
+        id: "mock-work-tab",
+        title: "Sprint Board",
+        url: "https://jira.atlassian.com",
+        icon: "KanbanSquare",
+        group: "Work",
+        context: "jira",
+      },
+      {
+        id: "mock-calendar-tab",
+        title: "Calendar",
+        url: "https://calendar.google.com",
+        icon: "CalendarDays",
+        group: "Work",
+        context: "calendar",
       },
     ],
     bookmarks: [

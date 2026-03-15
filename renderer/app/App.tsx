@@ -25,8 +25,12 @@ export default function App() {
 
   const {
     tabs,
+    groups,
     bookmarks,
-    activeTabId,
+    activeSection,
+    activeHomeTabId,
+    activeGroupTabId,
+    activeGroup,
     reliefMode,
     commandPaletteOpen,
     focusTimerMinutes,
@@ -38,6 +42,14 @@ export default function App() {
     sidebarCollapsed,
     initialize: initializeBrowser,
     setActiveTab,
+    setActiveHome,
+    setActiveGroup,
+    createGroup,
+    renameGroup,
+    moveTabToGroup,
+    addBookmarkFromTab,
+    removeBookmark,
+    toggleBookmarkFromTab,
     navigateActiveTab,
     toggleReliefMode,
     setCommandPaletteOpen,
@@ -198,8 +210,8 @@ export default function App() {
   ]);
 
   const activeTab = useMemo(
-    () => tabs.find((tab) => tab.id === activeTabId),
-    [activeTabId, tabs],
+    () => tabs.find((tab) => tab.id === (activeSection === "home" ? activeHomeTabId : activeGroupTabId)),
+    [activeGroupTabId, activeHomeTabId, activeSection, tabs],
   );
 
   const selectedTask = useMemo(
@@ -252,7 +264,8 @@ export default function App() {
         priority: "high",
         dueAt: new Date(now + 10 * 60 * 1000).toISOString(),
         deadline: new Date(now + 10 * 60 * 1000).toISOString(),
-        description: "Hardcoded popup test task.",
+        description:
+          "Investigate recurring API timeout failures in the AWS-backed request pipeline. Identify root cause, determine whether the issue is caused by retry exhaustion, downstream latency, or failing test configuration, and propose a fix or mitigation. Review logs, failing tests, and recent deployment changes.",
         ownerName: "Senior Dev Mina",
         ownerContact: "@mina-dev",
         escalationContact: "@eng-manager",
@@ -305,6 +318,9 @@ export default function App() {
     <>
       <ClarityLayout
         tabs={tabs}
+        groups={groups}
+        activeSection={activeSection}
+        activeGroup={activeGroup}
         bookmarks={bookmarks}
         activeTab={activeTab}
         reliefMode={reliefMode}
@@ -322,6 +338,14 @@ export default function App() {
         schedule={schedule}
         energyLogs={logs}
         onSelectTab={setActiveTab}
+        onSelectHome={setActiveHome}
+        onSelectGroup={setActiveGroup}
+        onCreateGroup={createGroup}
+        onRenameGroup={renameGroup}
+        onMoveTabToGroup={moveTabToGroup}
+        onAddBookmarkFromTab={addBookmarkFromTab}
+        onRemoveBookmark={removeBookmark}
+        onToggleBookmarkFromTab={toggleBookmarkFromTab}
         onNavigate={navigateActiveTab}
         onToggleReliefMode={toggleReliefMode}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}

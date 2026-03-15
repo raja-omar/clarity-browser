@@ -12,12 +12,13 @@ export interface BrowserViewportHandle {
 
 interface BrowserViewportProps {
   activeTab?: BrowserTab;
+  activeSection: "home" | "group";
   reliefMode: boolean;
   selectedTask?: Task;
 }
 
 export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewportProps>(
-  function BrowserViewport({ activeTab, reliefMode, selectedTask }, ref) {
+  function BrowserViewport({ activeTab, activeSection, reliefMode, selectedTask }, ref) {
     const webviewRef = useRef<HTMLElement | null>(null);
 
     useEffect(() => {
@@ -83,11 +84,40 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
             />
           )
         ) : (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-slate-500">Select a tab to begin.</p>
-          </div>
+          activeSection === "home" ? <HomeBlankState /> : <EmptyGroupState />
         )}
       </div>
     );
   },
 );
+
+function HomeBlankState() {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  return (
+    <div className="flex h-full items-center justify-center px-8">
+      <div className="max-w-xl text-center">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-500/10">
+          <Sparkles className="h-7 w-7 text-indigo-300" />
+        </div>
+        <p className="text-[11px] uppercase tracking-[0.24em] text-indigo-300/75">Home</p>
+        <h2 className="mt-3 text-3xl font-semibold text-white">{greeting}</h2>
+        <p className="mt-4 text-sm leading-7 text-slate-400">
+          Start with a clean workspace. Use the `+` button to open tabs here and work without adding them to any saved
+          group.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function EmptyGroupState() {
+  return (
+    <div className="flex h-full items-center justify-center px-8">
+      <div className="max-w-md text-center">
+        <p className="text-sm text-slate-400">This group does not have any tabs yet. Use `+` to add one.</p>
+      </div>
+    </div>
+  );
+}

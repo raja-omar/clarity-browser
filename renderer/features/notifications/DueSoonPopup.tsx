@@ -4,6 +4,7 @@ import { AlertTriangle, Bot, CalendarClock, CheckCircle2, LoaderCircle, Mail, X 
 import { trackCoachMetric } from "../../lib/coachMetrics";
 import type { CoachActionCard, CoachContextPayload, OverloadFeeling } from "../../types";
 import type { DueSoonReminder } from "./reminderEngine";
+import { JiraReliefPopup } from "./JiraReliefPopup";
 
 type Feeling = OverloadFeeling;
 
@@ -93,6 +94,9 @@ export function DueSoonPopup({ reminder, open, onClose, onOpenCoach }: DueSoonPo
   }, [feeling, reminder]);
 
   if (!reminder) return null;
+  if (reminder.itemType === "task" && reminder.task?.source === "jira") {
+    return <JiraReliefPopup reminder={reminder} open={open} onClose={onClose} />;
+  }
 
   const title = reminder.itemType === "meeting" ? reminder.meeting?.title : reminder.task?.title;
   const dueLabel = formatExactDueLabel(reminder);

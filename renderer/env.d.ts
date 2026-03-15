@@ -1,5 +1,5 @@
 import type * as React from "react";
-import type { AppBootstrap, EnergyLog, TaskStatus } from "./types";
+import type { AppBootstrap, EnergyLog, JiraSettings, Task, TaskStatus } from "./types";
 
 declare global {
   interface Window {
@@ -10,6 +10,11 @@ declare global {
         payload: Omit<EnergyLog, "id" | "timestamp">,
       ) => Promise<EnergyLog>;
       openExternal: (url: string) => Promise<void>;
+      addTask: (task: Task) => Promise<void>;
+      deleteTask: (taskId: string) => Promise<void>;
+      saveJiraSettings: (settings: JiraSettings) => Promise<void>;
+      getJiraSettings: () => Promise<Omit<JiraSettings, "token"> | null>;
+      syncJira: () => Promise<Task[]>;
     };
   }
 

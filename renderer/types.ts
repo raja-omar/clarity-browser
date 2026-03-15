@@ -34,6 +34,25 @@ export interface Task {
   priority: "low" | "medium" | "high";
   dueAt?: string;
   notes?: string;
+  jiraKey?: string;
+  jiraUrl?: string;
+  assignee?: string;
+  assigneeEmail?: string;
+  reporter?: string;
+  reporterEmail?: string;
+  teamName?: string;
+  subtasks?: string;
+  statusName?: string;
+  priorityName?: string;
+  labels?: string;
+  sprintName?: string;
+}
+
+export interface JiraSettings {
+  domain: string;
+  email: string;
+  token: string;
+  jql: string;
 }
 
 export interface Meeting {

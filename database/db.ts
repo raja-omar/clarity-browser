@@ -1,6 +1,14 @@
 import { join } from "node:path";
+import { safeStorage } from "electron";
 import DatabaseConstructor from "better-sqlite3";
-import type { AppBootstrap, EnergyLog, Meeting, Task, TaskStatus } from "../renderer/types";
+import type {
+  AppBootstrap,
+  EnergyLog,
+  JiraSettings,
+  Meeting,
+  Task,
+  TaskStatus,
+} from "../renderer/types";
 import { createStarterTabs } from "../electron/tabsManager";
 import { generateSchedule } from "../renderer/lib/scheduler/generateSchedule";
 
@@ -35,6 +43,14 @@ const SCHEMA_SQL = `
     mood INTEGER NOT NULL,
     energy TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS jira_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    domain TEXT NOT NULL,
+    email TEXT NOT NULL,
+    encrypted_token BLOB NOT NULL,
+    jql TEXT NOT NULL
+  );
 `;
 
 export function createDatabase(userDataPath: string): DatabaseClient {
@@ -43,9 +59,52 @@ export function createDatabase(userDataPath: string): DatabaseClient {
 
   db.pragma("journal_mode = WAL");
   db.exec(SCHEMA_SQL);
+  migrateSchema(db);
   seedDatabase(db);
 
   return db;
+}
+
+function migrateSchema(db: DatabaseClient): void {
+  const columns = db.pragma("table_info(tasks)") as { name: string }[];
+  const columnNames = new Set(columns.map((c) => c.name));
+
+  if (!columnNames.has("jira_key")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN jira_key TEXT");
+  }
+  if (!columnNames.has("jira_url")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN jira_url TEXT");
+  }
+  if (!columnNames.has("assignee")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN assignee TEXT");
+  }
+  if (!columnNames.has("status_name")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN status_name TEXT");
+  }
+  if (!columnNames.has("priority_name")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN priority_name TEXT");
+  }
+  if (!columnNames.has("labels")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN labels TEXT");
+  }
+  if (!columnNames.has("sprint_name")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN sprint_name TEXT");
+  }
+  if (!columnNames.has("assignee_email")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN assignee_email TEXT");
+  }
+  if (!columnNames.has("team_name")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN team_name TEXT");
+  }
+  if (!columnNames.has("reporter")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN reporter TEXT");
+  }
+  if (!columnNames.has("reporter_email")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN reporter_email TEXT");
+  }
+  if (!columnNames.has("subtasks")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN subtasks TEXT");
+  }
 }
 
 function seedDatabase(db: DatabaseClient): void {
@@ -101,7 +160,7 @@ function seedDatabase(db: DatabaseClient): void {
     `);
 
     for (const task of starterTasks) {
-      insertTask.run(task);
+      insertTask.run({ dueAt: null, notes: null, ...task });
     }
   }
 
@@ -174,7 +233,19 @@ export function getBootstrap(db: DatabaseClient): AppBootstrap {
         status,
         priority,
         due_at as dueAt,
-        notes
+        notes,
+        jira_key as jiraKey,
+        jira_url as jiraUrl,
+        assignee,
+        assignee_email as assigneeEmail,
+        reporter,
+        reporter_email as reporterEmail,
+        team_name as teamName,
+        status_name as statusName,
+        priority_name as priorityName,
+        labels,
+        sprint_name as sprintName,
+        subtasks
       FROM tasks
       ORDER BY
         CASE priority
@@ -235,4 +306,137 @@ export function saveEnergyLog(
   `).run(entry);
 
   return entry;
+}
+
+export function saveJiraSettings(
+  db: DatabaseClient,
+  settings: JiraSettings,
+): void {
+  const encryptedToken = safeStorage.isEncryptionAvailable()
+    ? safeStorage.encryptString(settings.token)
+    : Buffer.from(settings.token, "utf-8");
+
+  db.prepare(`
+    INSERT INTO jira_settings (id, domain, email, encrypted_token, jql)
+    VALUES (1, @domain, @email, @encryptedToken, @jql)
+    ON CONFLICT(id) DO UPDATE SET
+      domain = excluded.domain,
+      email = excluded.email,
+      encrypted_token = excluded.encrypted_token,
+      jql = excluded.jql
+  `).run({
+    domain: settings.domain,
+    email: settings.email,
+    encryptedToken: encryptedToken,
+    jql: settings.jql,
+  });
+}
+
+export function getJiraSettings(db: DatabaseClient): JiraSettings | null {
+  const row = db
+    .prepare("SELECT domain, email, encrypted_token, jql FROM jira_settings WHERE id = 1")
+    .get() as { domain: string; email: string; encrypted_token: Buffer; jql: string } | undefined;
+
+  if (!row) return null;
+
+  const token = safeStorage.isEncryptionAvailable()
+    ? safeStorage.decryptString(row.encrypted_token)
+    : row.encrypted_token.toString("utf-8");
+
+  return {
+    domain: row.domain,
+    email: row.email,
+    token,
+    jql: row.jql,
+  };
+}
+
+function taskToRow(task: Task) {
+  return {
+    id: task.id,
+    title: task.title,
+    estimate: task.estimate,
+    energy: task.energy,
+    source: task.source,
+    status: task.status,
+    priority: task.priority,
+    dueAt: task.dueAt ?? null,
+    notes: task.notes ?? null,
+    jiraKey: task.jiraKey ?? null,
+    jiraUrl: task.jiraUrl ?? null,
+    assignee: task.assignee ?? null,
+    assigneeEmail: task.assigneeEmail ?? null,
+    reporter: task.reporter ?? null,
+    reporterEmail: task.reporterEmail ?? null,
+    teamName: task.teamName ?? null,
+    statusName: task.statusName ?? null,
+    priorityName: task.priorityName ?? null,
+    labels: task.labels ?? null,
+    sprintName: task.sprintName ?? null,
+    subtasks: task.subtasks ?? null,
+  };
+}
+
+export function upsertJiraTasks(db: DatabaseClient, tasks: Task[]): void {
+  const upsert = db.prepare(`
+    INSERT INTO tasks (id, title, estimate, energy, source, status, priority, due_at, notes, jira_key, jira_url, assignee, assignee_email, reporter, reporter_email, team_name, status_name, priority_name, labels, sprint_name, subtasks)
+    VALUES (@id, @title, @estimate, @energy, @source, @status, @priority, @dueAt, @notes, @jiraKey, @jiraUrl, @assignee, @assigneeEmail, @reporter, @reporterEmail, @teamName, @statusName, @priorityName, @labels, @sprintName, @subtasks)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      estimate = excluded.estimate,
+      status = excluded.status,
+      priority = excluded.priority,
+      due_at = excluded.due_at,
+      notes = excluded.notes,
+      jira_key = excluded.jira_key,
+      jira_url = excluded.jira_url,
+      assignee = excluded.assignee,
+      assignee_email = excluded.assignee_email,
+      reporter = excluded.reporter,
+      reporter_email = excluded.reporter_email,
+      team_name = excluded.team_name,
+      status_name = excluded.status_name,
+      priority_name = excluded.priority_name,
+      labels = excluded.labels,
+      sprint_name = excluded.sprint_name,
+      subtasks = excluded.subtasks
+  `);
+
+  const tx = db.transaction((items: Task[]) => {
+    for (const task of items) {
+      upsert.run(taskToRow(task));
+    }
+  });
+
+  tx(tasks);
+}
+
+export function addTask(db: DatabaseClient, task: Task): void {
+  db.prepare(`
+    INSERT INTO tasks (id, title, estimate, energy, source, status, priority, due_at, notes, jira_key, jira_url, assignee, assignee_email, reporter, reporter_email, team_name, status_name, priority_name, labels, sprint_name, subtasks)
+    VALUES (@id, @title, @estimate, @energy, @source, @status, @priority, @dueAt, @notes, @jiraKey, @jiraUrl, @assignee, @assigneeEmail, @reporter, @reporterEmail, @teamName, @statusName, @priorityName, @labels, @sprintName, @subtasks)
+  `).run(taskToRow(task));
+}
+
+export function deleteTask(db: DatabaseClient, taskId: string): void {
+  db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+}
+
+export function getAllTasks(db: DatabaseClient): Task[] {
+  return db
+    .prepare(`
+      SELECT
+        id, title, estimate, energy, source, status, priority,
+        due_at as dueAt, notes, jira_key as jiraKey, jira_url as jiraUrl,
+        assignee, assignee_email as assigneeEmail,
+        reporter, reporter_email as reporterEmail,
+        team_name as teamName,
+        status_name as statusName, priority_name as priorityName,
+        labels, sprint_name as sprintName, subtasks
+      FROM tasks
+      ORDER BY
+        CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+        estimate DESC
+    `)
+    .all() as Task[];
 }

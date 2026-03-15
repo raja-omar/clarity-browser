@@ -42,10 +42,13 @@ export default function App() {
   const {
     tasks,
     selectedTaskId,
+    jiraSyncing,
     initialize: initializeTasks,
     selectTask,
     updateTaskStatus,
     addTask,
+    deleteTask,
+    syncJira,
   } = useTaskStore();
 
   const {
@@ -202,7 +205,10 @@ export default function App() {
       onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
       onCloseTab={closeTab}
       onNewTab={addTab}
-      onAddTask={addTask}
+      onAddTask={(input) => void addTask(input)}
+      onDeleteTask={(id) => void deleteTask(id)}
+      onSyncJira={() => void syncJira()}
+      jiraSyncing={jiraSyncing}
     />
   );
 }

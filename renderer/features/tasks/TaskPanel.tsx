@@ -1,4 +1,4 @@
-import { Check, CircleDot, PauseCircle } from "lucide-react";
+import { Check, CircleDot, ExternalLink, PauseCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn, formatRelativeDue } from "../../lib/utils";
 import type { Task } from "../../types";
@@ -8,6 +8,7 @@ interface TaskPanelProps {
   selectedTaskId?: string;
   onSelectTask: (taskId: string) => void;
   onUpdateStatus: (taskId: string, status: Task["status"]) => void;
+  onOpenExternal?: (url: string) => void;
 }
 
 const energyTone: Record<Task["energy"], string> = {
@@ -21,6 +22,7 @@ export function TaskPanel({
   selectedTaskId,
   onSelectTask,
   onUpdateStatus,
+  onOpenExternal,
 }: TaskPanelProps) {
   return (
     <div className="space-y-3">
@@ -57,9 +59,27 @@ export function TaskPanel({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-100">{task.title}</p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {task.source} • {task.estimate} min • {formatRelativeDue(task.dueAt)}
-                    </p>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
+                      {task.jiraKey ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (task.jiraUrl && onOpenExternal) onOpenExternal(task.jiraUrl);
+                          }}
+                          className="inline-flex items-center gap-1 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-300 transition hover:bg-blue-500/20"
+                        >
+                          {task.jiraKey}
+                          <ExternalLink className="h-2.5 w-2.5" />
+                        </button>
+                      ) : (
+                        <span>{task.source}</span>
+                      )}
+                      <span>•</span>
+                      <span>{task.estimate} min</span>
+                      <span>•</span>
+                      <span>{formatRelativeDue(task.dueAt)}</span>
+                    </div>
                   </div>
                   <span
                     className={cn(

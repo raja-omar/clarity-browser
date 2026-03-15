@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  CheckSquare,
   Command,
   Globe,
   Mail,
@@ -33,10 +34,12 @@ interface SidebarProps {
   activeTabId?: string;
   collapsed: boolean;
   focusMode: boolean;
+  taskCount?: number;
   onSelectTab: (tabId: string) => void;
   onNavigate: (url: string) => void;
   onOpenCommandPalette: () => void;
   onToggleCollapse: () => void;
+  onOpenTasks: () => void;
 }
 
 export function Sidebar({
@@ -44,10 +47,12 @@ export function Sidebar({
   activeTabId,
   collapsed,
   focusMode,
+  taskCount,
   onSelectTab,
   onNavigate,
   onOpenCommandPalette,
   onToggleCollapse,
+  onOpenTasks,
 }: SidebarProps) {
   return (
     <motion.aside
@@ -134,6 +139,24 @@ export function Sidebar({
           {!focusMode && !collapsed && (
             <>
               <div className="my-4 h-px bg-white/5" />
+              <button
+                type="button"
+                onClick={onOpenTasks}
+                className="mb-3 flex w-full items-center gap-2.5 rounded-xl bg-indigo-500/8 px-2.5 py-2.5 text-left text-indigo-200 transition-colors hover:bg-indigo-500/15"
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20">
+                  <CheckSquare className="h-3.5 w-3.5" />
+                </div>
+                <span className="flex flex-1 items-center justify-between">
+                  <span className="text-[13px] font-medium">Tasks</span>
+                  {(taskCount ?? 0) > 0 && (
+                    <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-medium">
+                      {taskCount}
+                    </span>
+                  )}
+                </span>
+              </button>
+
               <p className="mb-2 px-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">
                 Pinned Apps
               </p>
@@ -158,6 +181,14 @@ export function Sidebar({
           {!focusMode && collapsed && (
             <>
               <div className="my-3 h-px bg-white/5" />
+              <button
+                type="button"
+                onClick={onOpenTasks}
+                title="Tasks"
+                className="mb-1 flex w-full items-center justify-center rounded-xl bg-indigo-500/8 p-2 text-indigo-200 transition-colors hover:bg-indigo-500/15"
+              >
+                <CheckSquare className="h-4 w-4" />
+              </button>
               <div className="space-y-1">
                 {pinnedApps.map((app) => (
                   <button

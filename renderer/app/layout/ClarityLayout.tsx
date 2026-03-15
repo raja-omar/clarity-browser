@@ -54,7 +54,10 @@ interface ClarityLayoutProps {
   onToggleSidebar: () => void;
   onCloseTab: (tabId: string) => void;
   onNewTab: () => void;
-  onAddTask: (title: string) => void;
+  onAddTask: (input: import("../../store/useTaskStore").NewTaskInput) => void;
+  onDeleteTask: (taskId: string) => void;
+  onSyncJira: () => void;
+  jiraSyncing?: boolean;
 }
 
 export function ClarityLayout({
@@ -93,6 +96,9 @@ export function ClarityLayout({
   onCloseTab,
   onNewTab,
   onAddTask,
+  onDeleteTask,
+  onSyncJira,
+  jiraSyncing,
 }: ClarityLayoutProps) {
   const viewportRef = useRef<BrowserViewportHandle>(null);
 
@@ -110,10 +116,12 @@ export function ClarityLayout({
           activeTabId={activeTab?.id}
           collapsed={sidebarCollapsed}
           focusMode={focusModeActive}
+          taskCount={tasks.filter((t) => t.status !== "done").length}
           onSelectTab={onSelectTab}
           onNavigate={onNavigate}
           onOpenCommandPalette={onOpenCommandPalette}
           onToggleCollapse={onToggleSidebar}
+          onOpenTasks={() => onSetTaskDrawer(true)}
         />
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-0">
@@ -160,10 +168,14 @@ export function ClarityLayout({
         onClose={() => onSetTaskDrawer(false)}
         tasks={tasks}
         selectedTaskId={selectedTask?.id}
+        jiraSyncing={jiraSyncing}
         onSelectTask={onSelectTask}
         onUpdateStatus={onUpdateTaskStatus}
         onStartFocus={handleStartFocus}
         onAddTask={onAddTask}
+        onDeleteTask={onDeleteTask}
+        onSyncJira={onSyncJira}
+        onOpenExternal={onOpenExternal}
       />
 
       <CalendarDrawer

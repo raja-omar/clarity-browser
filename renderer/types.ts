@@ -3,6 +3,7 @@ export type TaskSource = "jira" | "personal";
 export type TaskStatus = "todo" | "in-progress" | "done";
 export type TaskType = "focus" | "relax" | "collaborate";
 export type MeetingType = "static" | "dynamic" | "optional";
+export type MeetingSource = "local" | "google";
 export type HostPreferredChannel = "chat" | "email" | "slack";
 export type CoachChatRole = "system" | "user" | "assistant";
 export type CoachMode = "chat" | "action_cards";
@@ -120,9 +121,12 @@ export interface Meeting {
   start: string;
   end: string;
   attendees: number;
+  source?: MeetingSource;
   attendeeList?: string[];
   notes?: string;
   type?: MeetingType;
+  isAllDay?: boolean;
+  location?: string;
   meetingLink?: string;
   notesLink?: string;
   recurringRule?: string;
@@ -133,6 +137,24 @@ export interface Meeting {
   prepChecklist?: MeetingPrepItem[];
   rescheduleReason?: string;
   rescheduleEmailDraft?: string;
+}
+
+export interface GoogleCalendarStatus {
+  available: boolean;
+  connected: boolean;
+  email?: string;
+  lastSyncedAt?: string;
+  error?: string;
+}
+
+export interface GoogleCalendarSyncWindow {
+  start: string;
+  end: string;
+}
+
+export interface GoogleCalendarSyncResult {
+  meetings: Meeting[];
+  status: GoogleCalendarStatus;
 }
 
 export interface UpdateMeetingSupportInput {

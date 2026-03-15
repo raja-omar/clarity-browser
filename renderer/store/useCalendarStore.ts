@@ -14,7 +14,7 @@ interface CalendarState {
   meetings: Meeting[];
   schedule: ScheduleBlock[];
   initialize: (bootstrap: AppBootstrap) => void;
-  recomputeSchedule: (tasks: Task[], latestEnergy?: EnergyLog) => void;
+  recomputeSchedule: (tasks: Task[], latestEnergy?: EnergyLog, meetingsOverride?: Meeting[]) => void;
   moveBlockByMinutes: (blockId: string, minutes: number) => void;
   addMeeting: (payload: CreateMeetingInput) => Promise<Meeting>;
   updateMeetingSupport: (payload: UpdateMeetingSupportInput) => Promise<Meeting | undefined>;
@@ -32,9 +32,9 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       meetings: bootstrap.meetings.map(normalizeMeeting),
       schedule: bootstrap.schedule,
     }),
-  recomputeSchedule: (tasks, latestEnergy) =>
+  recomputeSchedule: (tasks, latestEnergy, meetingsOverride) =>
     set({
-      schedule: generateSchedule(tasks, get().meetings, latestEnergy),
+      schedule: generateSchedule(tasks, meetingsOverride ?? get().meetings, latestEnergy),
     }),
   moveBlockByMinutes: (blockId, minutes) =>
     set((state) => ({
@@ -91,8 +91,11 @@ function normalizeMeeting(meeting: Meeting): Meeting {
   return {
     ...meeting,
     attendees: meeting.attendees ?? meeting.attendeeList?.length ?? 0,
+    source: meeting.source ?? "local",
     attendeeList: meeting.attendeeList ?? [],
     type: meeting.type ?? "dynamic",
+    isAllDay: meeting.isAllDay ?? false,
+    location: meeting.location,
     travelTimeMinutes: meeting.travelTimeMinutes ?? 0,
     hostName: meeting.hostName,
     hostContact: meeting.hostContact,

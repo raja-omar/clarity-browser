@@ -6,6 +6,9 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   EnergyLog,
+  GoogleCalendarStatus,
+  GoogleCalendarSyncResult,
+  GoogleCalendarSyncWindow,
   JiraSettings,
   Meeting,
   Task,
@@ -33,6 +36,10 @@ declare global {
       saveOpenAIApiKey: (apiKey: string) => Promise<{ saved: boolean }>;
       chatWithCoach: (payload: CoachChatRequest) => Promise<CoachChatResponse>;
       hasOpenAIKey: () => Promise<{ configured: boolean }>;
+      getGoogleCalendarStatus: () => Promise<GoogleCalendarStatus>;
+      connectGoogleCalendar: () => Promise<GoogleCalendarStatus>;
+      disconnectGoogleCalendar: () => Promise<GoogleCalendarStatus>;
+      syncGoogleCalendar: (window: GoogleCalendarSyncWindow) => Promise<GoogleCalendarSyncResult>;
     };
   }
 

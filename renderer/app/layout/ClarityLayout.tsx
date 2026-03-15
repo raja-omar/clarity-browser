@@ -16,6 +16,7 @@ import type {
   CoachContextPayload,
   EnergyLevel,
   EnergyLog,
+  GoogleCalendarStatus,
   Meeting,
   ScheduleBlock,
   Task,
@@ -43,6 +44,8 @@ interface ClarityLayoutProps {
   meetings: Meeting[];
   schedule: ScheduleBlock[];
   energyLogs: EnergyLog[];
+  googleCalendarStatus: GoogleCalendarStatus;
+  googleCalendarBusy: boolean;
   onSelectTab: (tabId: string) => void;
   onSelectHome: () => void;
   onSelectGroup: (group: string) => void;
@@ -82,6 +85,9 @@ interface ClarityLayoutProps {
   onUpdateMeetingSupport: (
     payload: import("../../types").UpdateMeetingSupportInput,
   ) => Promise<Meeting | undefined>;
+  onConnectGoogleCalendar: () => void;
+  onRefreshGoogleCalendar: () => void;
+  onDisconnectGoogleCalendar: () => void;
   onTriggerTestTaskPopup: () => void;
   onTriggerTestMeetingPopup: () => void;
 }
@@ -107,6 +113,8 @@ export function ClarityLayout({
   meetings,
   schedule,
   energyLogs,
+  googleCalendarStatus,
+  googleCalendarBusy,
   onSelectTab,
   onSelectHome,
   onSelectGroup,
@@ -144,6 +152,9 @@ export function ClarityLayout({
   onCloseDueSoonReminder,
   onOpenCoach,
   onUpdateMeetingSupport,
+  onConnectGoogleCalendar,
+  onRefreshGoogleCalendar,
+  onDisconnectGoogleCalendar,
   onTriggerTestTaskPopup,
   onTriggerTestMeetingPopup,
 }: ClarityLayoutProps) {
@@ -245,8 +256,13 @@ export function ClarityLayout({
         open={calendarDrawerOpen}
         onClose={() => onSetCalendarDrawer(false)}
         meetings={meetings}
+        googleCalendarStatus={googleCalendarStatus}
+        googleCalendarBusy={googleCalendarBusy}
         onOpenAddMeetingModal={onOpenAddMeetingModal}
         onOpenCoach={onOpenCoach}
+        onConnectGoogleCalendar={onConnectGoogleCalendar}
+        onRefreshGoogleCalendar={onRefreshGoogleCalendar}
+        onDisconnectGoogleCalendar={onDisconnectGoogleCalendar}
       />
 
       <ContextDrawer

@@ -281,7 +281,7 @@ export function DueSoonPopup({
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-indigo-200/80">
                 <AlertTriangle className="h-3.5 w-3.5" />
-                Due soon
+                {reminder.itemType === "meeting" ? "Meeting check-in" : "Due soon"}
               </p>
               <h3 className="mt-1 text-sm font-semibold text-white">{title}</h3>
               <p className="mt-1 text-xs text-slate-400">{dueLabel}</p>
@@ -781,7 +781,7 @@ function formatExactDueLabel(reminder: DueSoonReminder): string {
       }).format(dueDate);
 
   return reminder.itemType === "meeting"
-    ? `Starts on ${formatted}`
+    ? `Starts in ${reminder.slotMinutes} min · ${formatted}`
     : `Due on ${formatted}`;
 }
 

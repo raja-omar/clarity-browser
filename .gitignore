@@ -8,3 +8,4 @@ dist-electron/
 .env
 .env.local
 .env.*
+electron/googleOAuthClient.local.json

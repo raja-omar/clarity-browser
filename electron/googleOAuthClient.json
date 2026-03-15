@@ -1,0 +1,7 @@
+{
+  "installed": {
+    "client_id": "",
+    "client_secret": "",
+    "redirect_uris": ["http://127.0.0.1:53682/oauth2callback"]
+  }
+}

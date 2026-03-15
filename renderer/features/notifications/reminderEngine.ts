@@ -1,5 +1,6 @@
 import type { Meeting, Task } from "../../types";
 
+/** Meeting check-in popup times: 60, 30, and 10 minutes before start */
 export const REMINDER_SLOTS_MINUTES = [60, 30, 10] as const;
 const INITIAL_GRACE_MINUTES = 2;
 
@@ -47,6 +48,7 @@ function collectMeetingReminders(
   lastScanAt?: Date,
 ): DueSoonReminder[] {
   return meetings.flatMap((meeting) => {
+    if (meeting.isAllDay) return [];
     const meetingStart = new Date(meeting.start);
     if (meetingStart.getTime() <= now.getTime()) return [];
     return collectSlots(meeting.start, now, lastScanAt).map((slotMinutes) => ({

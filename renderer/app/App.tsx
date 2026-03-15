@@ -13,6 +13,8 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   EnergyLevel,
+  GoogleCalendarStatus,
+  GoogleCalendarSyncWindow,
   Meeting,
   UpdateMeetingSupportInput,
   UserPreferences,
@@ -29,6 +31,12 @@ export default function App() {
   const [addMeetingModalOpen, setAddMeetingModalOpen] = useState(false);
   const [personalizationOpen, setPersonalizationOpen] = useState(false);
   const [userPreferences, setUserPreferences] = useState<UserPreferences | undefined>(undefined);
+  const [googleCalendarStatus, setGoogleCalendarStatus] = useState<GoogleCalendarStatus>({
+    available: Boolean(window.clarity),
+    connected: false,
+  });
+  const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
+  const [googleMeetings, setGoogleMeetings] = useState<Meeting[]>([]);
 
   const {
     tabs,
@@ -92,6 +100,7 @@ export default function App() {
   } = useCalendarStore();
 
   const { logs, initialize: initializeEnergy, saveLog } = useEnergyStore();
+  const allMeetings = useMemo(() => mergeMeetings(meetings, googleMeetings), [googleMeetings, meetings]);
 
   useEffect(() => {
     async function bootstrap() {
@@ -104,6 +113,25 @@ export default function App() {
       initializeCalendar(payload);
       initializeEnergy(payload);
       setUserPreferences(payload.userPreferences);
+
+      if (window.clarity) {
+        try {
+          const status = await window.clarity.getGoogleCalendarStatus();
+          setGoogleCalendarStatus(status);
+
+          if (status.connected) {
+            const syncResult = await window.clarity.syncGoogleCalendar(getCurrentWeekWindow());
+            setGoogleMeetings(syncResult.meetings);
+            setGoogleCalendarStatus(syncResult.status);
+          }
+        } catch (error) {
+          setGoogleCalendarStatus((current) => ({
+            ...current,
+            error: error instanceof Error ? error.message : "Unable to load Google Calendar.",
+          }));
+        }
+      }
+
       setLoading(false);
     }
 
@@ -112,8 +140,8 @@ export default function App() {
 
   useEffect(() => {
     if (loading) return;
-    recomputeSchedule(tasks, logs[0]);
-  }, [loading, logs, meetings, recomputeSchedule, tasks]);
+    recomputeSchedule(tasks, logs[0], allMeetings);
+  }, [allMeetings, loading, logs, recomputeSchedule, tasks]);
 
   const [morningBriefOpen, setMorningBriefOpen] = useState(false);
   const [dueSoonReminder, setDueSoonReminder] = useState<DueSoonReminder | undefined>(undefined);
@@ -144,7 +172,7 @@ export default function App() {
 
     const tick = () => {
       const now = new Date();
-      const reminders = collectDueSoonReminders(tasks, meetings, now, lastReminderScan.current);
+      const reminders = collectDueSoonReminders(tasks, allMeetings, now, lastReminderScan.current);
       lastReminderScan.current = now;
       if (reminders.length === 0) return;
 
@@ -163,9 +191,28 @@ export default function App() {
     };
 
     tick();
-    const interval = setInterval(tick, 30000);
+    const interval = setInterval(tick, 30_000);
     return () => clearInterval(interval);
-  }, [dueSoonReminder?.key, loading, meetings, tasks]);
+  }, [allMeetings, dueSoonReminder?.key, loading, tasks]);
+
+  useEffect(() => {
+    if (!calendarDrawerOpen || !window.clarity || !googleCalendarStatus.connected || googleCalendarBusy) {
+      return;
+    }
+
+    const lastSynced = googleCalendarStatus.lastSyncedAt
+      ? new Date(googleCalendarStatus.lastSyncedAt).getTime()
+      : 0;
+
+    if (!lastSynced || Date.now() - lastSynced > 5 * 60 * 1000) {
+      void handleRefreshGoogleCalendar();
+    }
+  }, [
+    calendarDrawerOpen,
+    googleCalendarBusy,
+    googleCalendarStatus.connected,
+    googleCalendarStatus.lastSyncedAt,
+  ]);
 
   useEffect(() => {
     if (dueSoonReminder || pendingReminders.length === 0) return;
@@ -287,6 +334,67 @@ export default function App() {
     openCoachTab(context);
   }
 
+  async function handleRefreshGoogleCalendar(): Promise<void> {
+    if (!window.clarity || !googleCalendarStatus.connected) return;
+
+    setGoogleCalendarBusy(true);
+    try {
+      const syncResult = await window.clarity.syncGoogleCalendar(getCurrentWeekWindow());
+      setGoogleMeetings(syncResult.meetings);
+      setGoogleCalendarStatus(syncResult.status);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to refresh Google Calendar meetings.";
+      const latestStatus = await window.clarity
+        .getGoogleCalendarStatus()
+        .catch(() => googleCalendarStatus);
+      setGoogleCalendarStatus({ ...latestStatus, error: message });
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  }
+
+  async function handleConnectGoogleCalendar(): Promise<void> {
+    if (!window.clarity) return;
+
+    setGoogleCalendarBusy(true);
+    try {
+      const status = await window.clarity.connectGoogleCalendar();
+      setGoogleCalendarStatus(status);
+
+      if (status.connected) {
+        const syncResult = await window.clarity.syncGoogleCalendar(getCurrentWeekWindow());
+        setGoogleMeetings(syncResult.meetings);
+        setGoogleCalendarStatus(syncResult.status);
+      }
+    } catch (error) {
+      setGoogleCalendarStatus((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : "Unable to connect Google Calendar.",
+      }));
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  }
+
+  async function handleDisconnectGoogleCalendar(): Promise<void> {
+    if (!window.clarity) return;
+
+    setGoogleCalendarBusy(true);
+    try {
+      const status = await window.clarity.disconnectGoogleCalendar();
+      setGoogleMeetings([]);
+      setGoogleCalendarStatus(status);
+    } catch (error) {
+      setGoogleCalendarStatus((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : "Unable to disconnect Google Calendar.",
+      }));
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  }
+
   function handleTriggerTestTaskPopup(): void {
     const now = Date.now();
     setDueSoonReminder({
@@ -363,9 +471,11 @@ export default function App() {
         sidebarCollapsed={sidebarCollapsed}
         tasks={tasks}
         selectedTask={selectedTask}
-        meetings={meetings}
+        meetings={allMeetings}
         schedule={schedule}
         energyLogs={logs}
+        googleCalendarStatus={googleCalendarStatus}
+        googleCalendarBusy={googleCalendarBusy}
         onSelectTab={setActiveTab}
         onSelectHome={setActiveHome}
         onSelectGroup={setActiveGroup}
@@ -405,6 +515,9 @@ export default function App() {
         onCloseDueSoonReminder={() => setDueSoonReminder(undefined)}
         onOpenCoach={handleOpenCoach}
         onUpdateMeetingSupport={handleUpdateMeetingSupport}
+        onConnectGoogleCalendar={() => void handleConnectGoogleCalendar()}
+        onRefreshGoogleCalendar={() => void handleRefreshGoogleCalendar()}
+        onDisconnectGoogleCalendar={() => void handleDisconnectGoogleCalendar()}
         onTriggerTestTaskPopup={handleTriggerTestTaskPopup}
         onTriggerTestMeetingPopup={handleTriggerTestMeetingPopup}
       />
@@ -446,4 +559,25 @@ function buildTestMeeting(now: number, existing?: Meeting): Meeting {
     prepChecklist: existing?.prepChecklist ?? [],
     rescheduleEmailDraft: existing?.rescheduleEmailDraft,
   };
+}
+
+function getCurrentWeekWindow(now = new Date()): GoogleCalendarSyncWindow {
+  const start = new Date(now);
+  const dayOffset = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - dayOffset - 7);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 21);
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+}
+
+function mergeMeetings(localMeetings: Meeting[], syncedMeetings: Meeting[]): Meeting[] {
+  return [...localMeetings, ...syncedMeetings].sort(
+    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
+  );
 }

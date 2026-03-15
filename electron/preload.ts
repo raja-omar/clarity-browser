@@ -5,6 +5,9 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   EnergyLog,
+  GoogleCalendarStatus,
+  GoogleCalendarSyncResult,
+  GoogleCalendarSyncWindow,
   JiraSettings,
   Meeting,
   Task,
@@ -36,4 +39,12 @@ contextBridge.exposeInMainWorld("clarity", {
   chatWithCoach: (payload: CoachChatRequest): Promise<CoachChatResponse> =>
     ipcRenderer.invoke("clarity:chat-with-coach", payload),
   hasOpenAIKey: (): Promise<{ configured: boolean }> => ipcRenderer.invoke("clarity:has-openai-key"),
+  getGoogleCalendarStatus: (): Promise<GoogleCalendarStatus> =>
+    ipcRenderer.invoke("clarity:get-google-calendar-status"),
+  connectGoogleCalendar: (): Promise<GoogleCalendarStatus> =>
+    ipcRenderer.invoke("clarity:connect-google-calendar"),
+  disconnectGoogleCalendar: (): Promise<GoogleCalendarStatus> =>
+    ipcRenderer.invoke("clarity:disconnect-google-calendar"),
+  syncGoogleCalendar: (window: GoogleCalendarSyncWindow): Promise<GoogleCalendarSyncResult> =>
+    ipcRenderer.invoke("clarity:sync-google-calendar", window),
 });

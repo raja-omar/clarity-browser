@@ -1,5 +1,11 @@
 import { app, ipcMain, shell } from "electron";
 import { chatWithCoach, hasConfiguredOpenAIKey, saveOpenAIApiKey } from "./aiCoach";
+import { connectGoogleCalendar } from "./googleAuth";
+import {
+  disconnectGoogleCalendar,
+  getGoogleCalendarStatus,
+  syncGoogleCalendar,
+} from "./googleCalendar";
 import {
   getAllTasks,
   getJiraSettings,
@@ -20,6 +26,7 @@ import type {
   CoachChatRequest,
   CreateMeetingInput,
   CreateTaskInput,
+  GoogleCalendarSyncWindow,
   JiraSettings,
   UpdateMeetingSupportInput,
   UserPreferences,
@@ -131,6 +138,23 @@ function registerIpc(): void {
 
   ipcMain.handle("clarity:has-openai-key", () =>
     hasConfiguredOpenAIKey(app.getPath("userData")),
+  );
+
+  ipcMain.handle("clarity:get-google-calendar-status", () =>
+    getGoogleCalendarStatus(app.getPath("userData")),
+  );
+
+  ipcMain.handle("clarity:connect-google-calendar", async () => {
+    await connectGoogleCalendar();
+    return getGoogleCalendarStatus(app.getPath("userData"));
+  });
+
+  ipcMain.handle("clarity:disconnect-google-calendar", () =>
+    disconnectGoogleCalendar(app.getPath("userData")),
+  );
+
+  ipcMain.handle("clarity:sync-google-calendar", (_event, window: GoogleCalendarSyncWindow) =>
+    syncGoogleCalendar(app.getPath("userData"), window),
   );
 }
 

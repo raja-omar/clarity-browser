@@ -5,6 +5,7 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   EnergyLog,
+  JiraSettings,
   Meeting,
   Task,
   TaskStatus,
@@ -23,6 +24,11 @@ contextBridge.exposeInMainWorld("clarity", {
   saveEnergyLog: (payload: Omit<EnergyLog, "id" | "timestamp">) =>
     ipcRenderer.invoke("clarity:save-energy-log", payload),
   openExternal: (url: string) => ipcRenderer.invoke("clarity:open-external", url),
+  saveJiraSettings: (settings: JiraSettings) =>
+    ipcRenderer.invoke("clarity:save-jira-settings", settings),
+  getJiraSettings: () =>
+    ipcRenderer.invoke("clarity:get-jira-settings") as Promise<Omit<JiraSettings, "token"> | null>,
+  syncJira: () => ipcRenderer.invoke("clarity:sync-jira") as Promise<Task[]>,
   saveOpenAIApiKey: (apiKey: string) => ipcRenderer.invoke("clarity:save-openai-api-key", apiKey),
   chatWithCoach: (payload: CoachChatRequest): Promise<CoachChatResponse> =>
     ipcRenderer.invoke("clarity:chat-with-coach", payload),

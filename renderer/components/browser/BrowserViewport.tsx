@@ -7,6 +7,7 @@ import { CoachChatPane } from "../../features/ai/CoachChatPane";
 export interface BrowserViewportHandle {
   goBack: () => void;
   goForward: () => void;
+  reload: () => void;
 }
 
 interface BrowserViewportProps {
@@ -33,6 +34,10 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
       goForward() {
         const wv = webviewRef.current as any;
         if (wv?.canGoForward?.()) wv.goForward();
+      },
+      reload() {
+        const wv = webviewRef.current as any;
+        if (wv?.reload) wv.reload();
       },
     }));
 

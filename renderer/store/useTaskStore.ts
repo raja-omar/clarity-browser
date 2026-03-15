@@ -4,19 +4,26 @@ import type { AppBootstrap, CreateTaskInput, Task, TaskStatus } from "../types";
 interface TaskState {
   tasks: Task[];
   selectedTaskId?: string;
+  jiraSyncing: boolean;
+  jiraSyncError?: string;
   initialize: (bootstrap: AppBootstrap) => void;
   selectTask: (taskId: string) => void;
   updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
   addTask: (payload: string | CreateTaskInput) => Promise<Task>;
+  syncJira: () => Promise<void>;
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   selectedTaskId: undefined,
+  jiraSyncing: false,
+  jiraSyncError: undefined,
   initialize: (bootstrap) =>
     set({
       tasks: bootstrap.tasks.map(normalizeTask),
       selectedTaskId: bootstrap.tasks.find((task) => task.status !== "done")?.id,
+      jiraSyncing: false,
+      jiraSyncError: undefined,
     }),
   selectTask: (taskId) => set({ selectedTaskId: taskId }),
   updateTaskStatus: async (taskId, status) => {
@@ -52,6 +59,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }));
 
     return task;
+  },
+  syncJira: async () => {
+    if (!window.clarity?.syncJira) return;
+    set({ jiraSyncing: true, jiraSyncError: undefined });
+    try {
+      const syncedTasks = await window.clarity.syncJira();
+      set({
+        tasks: syncedTasks.map(normalizeTask),
+        jiraSyncing: false,
+      });
+    } catch (error) {
+      set({
+        jiraSyncing: false,
+        jiraSyncError: error instanceof Error ? error.message : "Jira sync failed.",
+      });
+    }
   },
 }));
 

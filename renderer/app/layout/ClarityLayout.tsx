@@ -62,6 +62,8 @@ interface ClarityLayoutProps {
   onOpenAddMeetingModal: () => void;
   onOpenPersonalization: () => void;
   onOpenHealthCheckIn: () => void;
+  onSyncJira: () => void;
+  jiraSyncing?: boolean;
   dueSoonReminder?: DueSoonReminder;
   dueSoonReminderOpen: boolean;
   onCloseDueSoonReminder: () => void;
@@ -110,6 +112,8 @@ export function ClarityLayout({
   onOpenAddMeetingModal,
   onOpenPersonalization,
   onOpenHealthCheckIn,
+  onSyncJira,
+  jiraSyncing,
   dueSoonReminder,
   dueSoonReminderOpen,
   onCloseDueSoonReminder,
@@ -163,6 +167,7 @@ export function ClarityLayout({
               onOpenExternal={onOpenExternal}
               onGoBack={() => viewportRef.current?.goBack()}
               onGoForward={() => viewportRef.current?.goForward()}
+              onReload={() => viewportRef.current?.reload()}
             />
 
             <BrowserViewport
@@ -192,6 +197,8 @@ export function ClarityLayout({
         onStartFocus={handleStartFocus}
         onAddTask={onAddTask}
         onOpenAddTaskModal={onOpenAddTaskModal}
+        onSyncJira={onSyncJira}
+        jiraSyncing={jiraSyncing}
       />
 
       <CalendarDrawer

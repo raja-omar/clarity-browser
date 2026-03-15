@@ -6,6 +6,7 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   EnergyLog,
+  JiraSettings,
   Meeting,
   Task,
   TaskStatus,
@@ -24,6 +25,9 @@ declare global {
         payload: Omit<EnergyLog, "id" | "timestamp">,
       ) => Promise<EnergyLog>;
       openExternal: (url: string) => Promise<void>;
+      saveJiraSettings: (settings: JiraSettings) => Promise<void>;
+      getJiraSettings: () => Promise<Omit<JiraSettings, "token"> | null>;
+      syncJira: () => Promise<Task[]>;
       saveOpenAIApiKey: (apiKey: string) => Promise<{ saved: boolean }>;
       chatWithCoach: (payload: CoachChatRequest) => Promise<CoachChatResponse>;
       hasOpenAIKey: () => Promise<{ configured: boolean }>;

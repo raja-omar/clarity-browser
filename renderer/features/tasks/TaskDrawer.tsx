@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, CircleDot, PauseCircle, Plus, X } from "lucide-react";
+import { Check, CircleDot, KanbanSquare, Loader2, PauseCircle, Plus, RefreshCw, Settings, X } from "lucide-react";
 import { cn, formatRelativeDue } from "../../lib/utils";
 import type { Task } from "../../types";
+import { JiraSettingsModal } from "../jira/JiraSettingsModal";
 
 interface TaskDrawerProps {
   open: boolean;
@@ -14,6 +15,8 @@ interface TaskDrawerProps {
   onStartFocus: (taskId: string) => void;
   onAddTask: (title: string) => void;
   onOpenAddTaskModal: () => void;
+  onSyncJira: () => void;
+  jiraSyncing?: boolean;
 }
 
 const energyTone: Record<Task["energy"], string> = {
@@ -32,9 +35,12 @@ export function TaskDrawer({
   onStartFocus,
   onAddTask,
   onOpenAddTaskModal,
+  onSyncJira,
+  jiraSyncing,
 }: TaskDrawerProps) {
   const [showAddInput, setShowAddInput] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [jiraSettingsOpen, setJiraSettingsOpen] = useState(false);
   const todayTasks = tasks.filter((t) => t.status !== "done");
   const completedTasks = tasks.filter((t) => t.status === "done");
 
@@ -48,9 +54,10 @@ export function TaskDrawer({
   }
 
   return (
-    <AnimatePresence>
-      {open && (
-        <>
+    <>
+      <AnimatePresence>
+        {open && (
+          <>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -74,6 +81,33 @@ export function TaskDrawer({
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onSyncJira}
+                  disabled={jiraSyncing}
+                  title="Refresh Jira tickets"
+                  className="rounded-lg border border-blue-400/15 bg-blue-500/8 px-2.5 py-1.5 text-xs text-blue-300 transition hover:bg-blue-500/15 disabled:opacity-50"
+                >
+                  {jiraSyncing ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Refreshing
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5">
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Refresh
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJiraSettingsOpen(true)}
+                  title="Jira settings"
+                  className="rounded-lg border border-white/8 bg-white/[0.03] p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-200"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowAddInput(!showAddInput)}
@@ -137,6 +171,29 @@ export function TaskDrawer({
                     </div>
                   </form>
                 </div>
+              )}
+
+              {tasks.every((task) => task.source !== "jira") && !showAddInput && (
+                <button
+                  type="button"
+                  onClick={onSyncJira}
+                  disabled={jiraSyncing}
+                  className="mb-4 flex w-full items-center gap-3 rounded-xl border border-blue-400/15 bg-blue-500/5 p-3.5 text-left transition hover:bg-blue-500/10 disabled:opacity-50"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/15">
+                    {jiraSyncing ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-300" />
+                    ) : (
+                      <KanbanSquare className="h-4 w-4 text-blue-300" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-blue-200">Import from Jira</p>
+                    <p className="text-xs text-blue-300/60">
+                      Pull your assigned tickets into this task list
+                    </p>
+                  </div>
+                </button>
               )}
 
               <p className="mb-3 px-1 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">
@@ -273,8 +330,14 @@ export function TaskDrawer({
               </p>
             </div>
           </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+          </>
+        )}
+      </AnimatePresence>
+      <JiraSettingsModal
+        open={jiraSettingsOpen}
+        onOpenChange={setJiraSettingsOpen}
+        onSyncComplete={onSyncJira}
+      />
+    </>
   );
 }

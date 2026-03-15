@@ -95,10 +95,7 @@ export function DueSoonPopup({ reminder, open, onClose, onOpenCoach }: DueSoonPo
   if (!reminder) return null;
 
   const title = reminder.itemType === "meeting" ? reminder.meeting?.title : reminder.task?.title;
-  const dueLabel =
-    reminder.itemType === "meeting"
-      ? `starts in ${reminder.slotMinutes} minutes`
-      : `due in ${reminder.slotMinutes} minutes`;
+  const dueLabel = formatExactDueLabel(reminder);
 
   async function handleCopyDraft(): Promise<void> {
     if (!draft) return;
@@ -443,4 +440,21 @@ function getFallbackActionCards(
       confidence: 0.78,
     },
   ];
+}
+
+function formatExactDueLabel(reminder: DueSoonReminder): string {
+  const dueDate = new Date(reminder.dueAt);
+  const formatted = Number.isNaN(dueDate.getTime())
+    ? reminder.dueAt
+    : new Intl.DateTimeFormat(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(dueDate);
+
+  return reminder.itemType === "meeting"
+    ? `Starts on ${formatted}`
+    : `Due on ${formatted}`;
 }

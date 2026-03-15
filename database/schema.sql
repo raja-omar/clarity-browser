@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   owner_name TEXT,
   owner_contact TEXT,
   escalation_contact TEXT,
-  subtasks_json TEXT
+  subtasks_json TEXT,
+  jira_key TEXT,
+  jira_url TEXT
 );
 
 CREATE TABLE IF NOT EXISTS meetings (
@@ -54,4 +56,12 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   workday_start TEXT,
   workday_end TEXT,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS jira_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  domain TEXT NOT NULL,
+  email TEXT NOT NULL,
+  encrypted_token BLOB NOT NULL,
+  jql TEXT NOT NULL
 );

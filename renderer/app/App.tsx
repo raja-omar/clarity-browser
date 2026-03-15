@@ -55,10 +55,12 @@ export default function App() {
   const {
     tasks,
     selectedTaskId,
+    jiraSyncing,
     initialize: initializeTasks,
     selectTask,
     updateTaskStatus,
     addTask,
+    syncJira,
   } = useTaskStore();
 
   const {
@@ -343,6 +345,8 @@ export default function App() {
         onOpenAddMeetingModal={() => setAddMeetingModalOpen(true)}
         onOpenPersonalization={() => setPersonalizationOpen(true)}
         onOpenHealthCheckIn={() => setMorningBriefOpen(true)}
+        onSyncJira={() => void syncJira()}
+        jiraSyncing={jiraSyncing}
         dueSoonReminder={dueSoonReminder}
         dueSoonReminderOpen={Boolean(dueSoonReminder)}
         onCloseDueSoonReminder={() => setDueSoonReminder(undefined)}

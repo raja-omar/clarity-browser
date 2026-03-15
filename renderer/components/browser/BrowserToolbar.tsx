@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Command, ExternalLink, Search, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Command, ExternalLink, RefreshCw, Search, Star } from "lucide-react";
 import type { Bookmark, BrowserTab } from "../../types";
 
 interface BrowserToolbarProps {
@@ -11,6 +11,7 @@ interface BrowserToolbarProps {
   onOpenExternal: (url: string) => void;
   onGoBack: () => void;
   onGoForward: () => void;
+  onReload: () => void;
 }
 
 export function BrowserToolbar({
@@ -22,6 +23,7 @@ export function BrowserToolbar({
   onOpenExternal,
   onGoBack,
   onGoForward,
+  onReload,
 }: BrowserToolbarProps) {
   const [value, setValue] = useState(activeTab?.url ?? "");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -143,6 +145,14 @@ export function BrowserToolbar({
           className="rounded-lg p-1.5 transition hover:bg-white/5 hover:text-slate-300"
         >
           <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onReload}
+          className="rounded-lg p-1.5 transition hover:bg-white/5 hover:text-slate-300"
+          title="Refresh page"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
         </button>
       </div>
 

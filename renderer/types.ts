@@ -96,6 +96,15 @@ export interface Task {
   ownerContact?: string;
   escalationContact?: string;
   subtasks?: TaskSubtask[];
+  jiraKey?: string;
+  jiraUrl?: string;
+}
+
+export interface JiraSettings {
+  domain: string;
+  email: string;
+  token: string;
+  jql: string;
 }
 
 export interface Meeting {

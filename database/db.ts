@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { safeStorage } from "electron";
 import DatabaseConstructor from "better-sqlite3";
 import type {
   AppBootstrap,
@@ -6,6 +7,7 @@ import type {
   CreateTaskInput,
   EnergyLog,
   HostPreferredChannel,
+  JiraSettings,
   Meeting,
   Task,
   TaskSubtask,
@@ -35,7 +37,9 @@ const SCHEMA_SQL = `
     owner_name TEXT,
     owner_contact TEXT,
     escalation_contact TEXT,
-    subtasks_json TEXT
+    subtasks_json TEXT,
+    jira_key TEXT,
+    jira_url TEXT
   );
 
   CREATE TABLE IF NOT EXISTS meetings (
@@ -74,6 +78,14 @@ const SCHEMA_SQL = `
     workday_start TEXT,
     workday_end TEXT,
     updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS jira_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    domain TEXT NOT NULL,
+    email TEXT NOT NULL,
+    encrypted_token BLOB NOT NULL,
+    jql TEXT NOT NULL
   );
 `;
 
@@ -119,6 +131,12 @@ function applyBackwardCompatibleMigrations(db: DatabaseClient): void {
   if (!hasColumn("tasks", "subtasks_json")) {
     db.exec("ALTER TABLE tasks ADD COLUMN subtasks_json TEXT");
   }
+  if (!hasColumn("tasks", "jira_key")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN jira_key TEXT");
+  }
+  if (!hasColumn("tasks", "jira_url")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN jira_url TEXT");
+  }
 
   if (!hasColumn("meetings", "description")) {
     db.exec("ALTER TABLE meetings ADD COLUMN description TEXT");
@@ -150,6 +168,16 @@ function applyBackwardCompatibleMigrations(db: DatabaseClient): void {
   if (!hasColumn("meetings", "host_preferred_channel")) {
     db.exec("ALTER TABLE meetings ADD COLUMN host_preferred_channel TEXT");
   }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS jira_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      domain TEXT NOT NULL,
+      email TEXT NOT NULL,
+      encrypted_token BLOB NOT NULL,
+      jql TEXT NOT NULL
+    );
+  `);
 }
 
 function seedDatabase(db: DatabaseClient): void {
@@ -164,7 +192,7 @@ function seedDatabase(db: DatabaseClient): void {
         title: "Write architecture summary for onboarding doc",
         estimate: 90,
         energy: "high",
-        source: "jira",
+        source: "personal",
         status: "in-progress",
         priority: "high",
         dueAt: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
@@ -195,7 +223,7 @@ function seedDatabase(db: DatabaseClient): void {
         title: "Refine Jira tickets for sprint planning",
         estimate: 50,
         energy: "medium",
-        source: "jira",
+        source: "personal",
         status: "todo",
         priority: "high",
         ownerName: "Engineering Manager",
@@ -330,226 +358,6 @@ function seedDatabase(db: DatabaseClient): void {
     });
   }
 
-  ensureDemoRecords(db);
-}
-
-function ensureDemoRecords(db: DatabaseClient): void {
-  const now = Date.now();
-
-  const demoTasks: Task[] = [
-    {
-      id: "demo-task-ticket-1",
-      title: "Ticket CLAR-142: finalize API error handling",
-      estimate: 50,
-      estimatedTimeMinutes: 50,
-      energy: "high",
-      source: "jira",
-      status: "todo",
-      priority: "high",
-      dueAt: new Date(now + 10 * 60 * 1000).toISOString(),
-      deadline: new Date(now + 10 * 60 * 1000).toISOString(),
-      description: "Production issue ticket requiring quick confirmation with senior dev.",
-      ownerName: "Senior Dev Mina",
-      ownerContact: "@mina-dev",
-      escalationContact: "@eng-manager",
-      subtasks: [
-        { id: "demo-task-ticket-1-sub-1", title: "Reproduce failing request locally", done: false },
-        { id: "demo-task-ticket-1-sub-2", title: "Patch and run regression checks", done: false },
-        { id: "demo-task-ticket-1-sub-3", title: "Post rollout update in Jira", done: false },
-      ],
-      type: "focus",
-    },
-    {
-      id: "demo-task-ticket-2",
-      title: "Ticket CLAR-155: update onboarding copy",
-      estimate: 35,
-      estimatedTimeMinutes: 35,
-      energy: "medium",
-      source: "jira",
-      status: "todo",
-      priority: "medium",
-      dueAt: new Date(now + 65 * 60 * 1000).toISOString(),
-      deadline: new Date(now + 65 * 60 * 1000).toISOString(),
-      description: "Copy updates pending stakeholder review.",
-      ownerName: "Product Owner Alex",
-      ownerContact: "alex@example.com",
-      subtasks: [
-        { id: "demo-task-ticket-2-sub-1", title: "Draft revised section", done: true },
-        { id: "demo-task-ticket-2-sub-2", title: "Request final approval", done: false },
-      ],
-      type: "collaborate",
-    },
-  ];
-
-  const upsertTask = db.prepare(`
-    INSERT INTO tasks (
-      id,
-      title,
-      estimate,
-      energy,
-      source,
-      status,
-      priority,
-      due_at,
-      notes,
-      description,
-      task_type,
-      estimated_time_minutes,
-      deadline,
-      owner_name,
-      owner_contact,
-      escalation_contact,
-      subtasks_json
-    )
-    VALUES (
-      @id,
-      @title,
-      @estimate,
-      @energy,
-      @source,
-      @status,
-      @priority,
-      @dueAt,
-      @notes,
-      @description,
-      @type,
-      @estimatedTimeMinutes,
-      @deadline,
-      @ownerName,
-      @ownerContact,
-      @escalationContact,
-      @subtasksJson
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      title = excluded.title,
-      estimate = excluded.estimate,
-      energy = excluded.energy,
-      source = excluded.source,
-      status = excluded.status,
-      priority = excluded.priority,
-      due_at = excluded.due_at,
-      notes = excluded.notes,
-      description = excluded.description,
-      task_type = excluded.task_type,
-      estimated_time_minutes = excluded.estimated_time_minutes,
-      deadline = excluded.deadline,
-      owner_name = excluded.owner_name,
-      owner_contact = excluded.owner_contact,
-      escalation_contact = excluded.escalation_contact,
-      subtasks_json = excluded.subtasks_json
-  `);
-
-  for (const task of demoTasks) {
-    upsertTask.run({
-      ...task,
-      notes: task.description,
-      ownerName: task.ownerName ?? null,
-      ownerContact: task.ownerContact ?? null,
-      escalationContact: task.escalationContact ?? null,
-      subtasksJson: JSON.stringify(task.subtasks ?? []),
-    });
-  }
-
-  const demoMeetings: Meeting[] = [
-    {
-      id: "demo-meeting-1",
-      title: "Design handoff with host (demo)",
-      start: new Date(now + 10 * 60 * 1000).toISOString(),
-      end: new Date(now + 40 * 60 * 1000).toISOString(),
-      attendees: 4,
-      attendeeList: ["Omar", "Mina", "Alex", "Sam"],
-      description: "Discuss final handoff details and constraints.",
-      notes: "Use this to test overwhelmed/unwell response drafting.",
-      type: "dynamic",
-      meetingLink: "https://meet.google.com/demo-room",
-      hostName: "Mina (Host)",
-      hostContact: "mina@example.com",
-      hostPreferredChannel: "chat",
-    },
-    {
-      id: "demo-meeting-2",
-      title: "Stakeholder sync (demo)",
-      start: new Date(now + 70 * 60 * 1000).toISOString(),
-      end: new Date(now + 95 * 60 * 1000).toISOString(),
-      attendees: 3,
-      attendeeList: ["Omar", "Alex", "Jordan"],
-      description: "Review status and blockers for release.",
-      notes: "Second reminder sample for 60m slot.",
-      type: "static",
-      hostName: "Alex (Host)",
-      hostContact: "@alex-po",
-      hostPreferredChannel: "email",
-    },
-  ];
-
-  const upsertMeeting = db.prepare(`
-    INSERT INTO meetings (
-      id,
-      title,
-      start,
-      "end",
-      attendees,
-      notes,
-      description,
-      meeting_type,
-      attendees_list,
-      meeting_link,
-      notes_link,
-      recurring_rule,
-      travel_time_minutes,
-      host_name,
-      host_contact,
-      host_preferred_channel
-    )
-    VALUES (
-      @id,
-      @title,
-      @start,
-      @end,
-      @attendees,
-      @notes,
-      @description,
-      @type,
-      @attendeeListJson,
-      @meetingLink,
-      @notesLink,
-      @recurringRule,
-      @travelTimeMinutes,
-      @hostName,
-      @hostContact,
-      @hostPreferredChannel
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      title = excluded.title,
-      start = excluded.start,
-      "end" = excluded."end",
-      attendees = excluded.attendees,
-      notes = excluded.notes,
-      description = excluded.description,
-      meeting_type = excluded.meeting_type,
-      attendees_list = excluded.attendees_list,
-      meeting_link = excluded.meeting_link,
-      notes_link = excluded.notes_link,
-      recurring_rule = excluded.recurring_rule,
-      travel_time_minutes = excluded.travel_time_minutes,
-      host_name = excluded.host_name,
-      host_contact = excluded.host_contact,
-      host_preferred_channel = excluded.host_preferred_channel
-  `);
-
-  for (const meeting of demoMeetings) {
-    upsertMeeting.run({
-      ...meeting,
-      attendeeListJson: JSON.stringify(meeting.attendeeList ?? []),
-      meetingLink: meeting.meetingLink ?? null,
-      notesLink: meeting.notesLink ?? null,
-      recurringRule: meeting.recurringRule ?? null,
-      travelTimeMinutes: meeting.travelTimeMinutes ?? 0,
-      hostName: meeting.hostName ?? null,
-      hostContact: meeting.hostContact ?? null,
-      hostPreferredChannel: meeting.hostPreferredChannel ?? null,
-    });
-  }
 }
 
 export function getBootstrap(db: DatabaseClient): AppBootstrap {
@@ -573,7 +381,9 @@ export function getBootstrap(db: DatabaseClient): AppBootstrap {
         owner_name as ownerName,
         owner_contact as ownerContact,
         escalation_contact as escalationContact,
-        subtasks_json as subtasksJson
+        subtasks_json as subtasksJson,
+        jira_key as jiraKey,
+        jira_url as jiraUrl
       FROM tasks
       ORDER BY
         CASE priority
@@ -602,6 +412,8 @@ export function getBootstrap(db: DatabaseClient): AppBootstrap {
     ownerContact?: string;
     escalationContact?: string;
     subtasksJson?: string;
+    jiraKey?: string;
+    jiraUrl?: string;
   }>;
   const tasks = taskRows.map(toTask);
 
@@ -676,6 +488,65 @@ export function updateTaskStatus(
   status: TaskStatus,
 ): void {
   db.prepare("UPDATE tasks SET status = ? WHERE id = ?").run(status, taskId);
+}
+
+export function getAllTasks(db: DatabaseClient): Task[] {
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        id,
+        title,
+        estimate,
+        energy,
+        source,
+        status,
+        priority,
+        due_at as dueAt,
+        notes,
+        description,
+        task_type as type,
+        estimated_time_minutes as estimatedTimeMinutes,
+        deadline,
+        owner_name as ownerName,
+        owner_contact as ownerContact,
+        escalation_contact as escalationContact,
+        subtasks_json as subtasksJson,
+        jira_key as jiraKey,
+        jira_url as jiraUrl
+      FROM tasks
+      ORDER BY
+        CASE priority
+          WHEN 'high' THEN 1
+          WHEN 'medium' THEN 2
+          ELSE 3
+        END,
+        COALESCE(estimated_time_minutes, estimate) DESC
+    `,
+    )
+    .all() as Array<{
+    id: string;
+    title: string;
+    estimate: number;
+    energy: Task["energy"];
+    source: Task["source"];
+    status: Task["status"];
+    priority: Task["priority"];
+    dueAt?: string;
+    notes?: string;
+    description?: string;
+    type?: Task["type"];
+    estimatedTimeMinutes?: number;
+    deadline?: string;
+    ownerName?: string;
+    ownerContact?: string;
+    escalationContact?: string;
+    subtasksJson?: string;
+    jiraKey?: string;
+    jiraUrl?: string;
+  }>;
+
+  return rows.map(toTask);
 }
 
 export function saveEnergyLog(
@@ -764,6 +635,156 @@ export function createTask(db: DatabaseClient, payload: CreateTaskInput): Task {
   });
 
   return task;
+}
+
+function toDbTaskRow(task: Task) {
+  return {
+    id: task.id,
+    title: task.title,
+    estimate: task.estimate,
+    energy: task.energy,
+    source: task.source,
+    status: task.status,
+    priority: task.priority,
+    dueAt: task.dueAt ?? null,
+    notes: task.notes ?? null,
+    description: task.description ?? null,
+    type: task.type ?? null,
+    estimatedTimeMinutes: task.estimatedTimeMinutes ?? task.estimate,
+    deadline: task.deadline ?? null,
+    ownerName: task.ownerName ?? null,
+    ownerContact: task.ownerContact ?? null,
+    escalationContact: task.escalationContact ?? null,
+    subtasksJson: task.subtasks?.length ? JSON.stringify(task.subtasks) : null,
+    jiraKey: task.jiraKey ?? null,
+    jiraUrl: task.jiraUrl ?? null,
+  };
+}
+
+export function upsertJiraTasks(db: DatabaseClient, tasks: Task[]): void {
+  const upsert = db.prepare(`
+    INSERT INTO tasks (
+      id,
+      title,
+      estimate,
+      energy,
+      source,
+      status,
+      priority,
+      due_at,
+      notes,
+      description,
+      task_type,
+      estimated_time_minutes,
+      deadline,
+      owner_name,
+      owner_contact,
+      escalation_contact,
+      subtasks_json,
+      jira_key,
+      jira_url
+    )
+    VALUES (
+      @id,
+      @title,
+      @estimate,
+      @energy,
+      @source,
+      @status,
+      @priority,
+      @dueAt,
+      @notes,
+      @description,
+      @type,
+      @estimatedTimeMinutes,
+      @deadline,
+      @ownerName,
+      @ownerContact,
+      @escalationContact,
+      @subtasksJson,
+      @jiraKey,
+      @jiraUrl
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      estimate = excluded.estimate,
+      energy = excluded.energy,
+      source = excluded.source,
+      status = excluded.status,
+      priority = excluded.priority,
+      due_at = excluded.due_at,
+      notes = excluded.notes,
+      description = excluded.description,
+      task_type = excluded.task_type,
+      estimated_time_minutes = excluded.estimated_time_minutes,
+      deadline = excluded.deadline,
+      owner_name = excluded.owner_name,
+      owner_contact = excluded.owner_contact,
+      escalation_contact = excluded.escalation_contact,
+      subtasks_json = excluded.subtasks_json,
+      jira_key = excluded.jira_key,
+      jira_url = excluded.jira_url
+  `);
+
+  const removeAllJiraTasks = db.prepare("DELETE FROM tasks WHERE source = 'jira'");
+
+  const tx = db.transaction((items: Task[]) => {
+    for (const task of items) {
+      upsert.run(toDbTaskRow(task));
+    }
+    if (items.length === 0) {
+      removeAllJiraTasks.run();
+      return;
+    }
+
+    const placeholders = items.map(() => "?").join(", ");
+    const removeMissing = db.prepare(
+      `DELETE FROM tasks WHERE source = 'jira' AND id NOT IN (${placeholders})`,
+    );
+    removeMissing.run(...items.map((task) => task.id));
+  });
+
+  tx(tasks);
+}
+
+export function saveJiraSettings(db: DatabaseClient, settings: JiraSettings): void {
+  const encryptedToken = safeStorage.isEncryptionAvailable()
+    ? safeStorage.encryptString(settings.token)
+    : Buffer.from(settings.token, "utf-8");
+
+  db.prepare(`
+    INSERT INTO jira_settings (id, domain, email, encrypted_token, jql)
+    VALUES (1, @domain, @email, @encryptedToken, @jql)
+    ON CONFLICT(id) DO UPDATE SET
+      domain = excluded.domain,
+      email = excluded.email,
+      encrypted_token = excluded.encrypted_token,
+      jql = excluded.jql
+  `).run({
+    domain: settings.domain,
+    email: settings.email,
+    encryptedToken,
+    jql: settings.jql,
+  });
+}
+
+export function getJiraSettings(db: DatabaseClient): JiraSettings | null {
+  const row = db
+    .prepare("SELECT domain, email, encrypted_token, jql FROM jira_settings WHERE id = 1")
+    .get() as { domain: string; email: string; encrypted_token: Buffer; jql: string } | undefined;
+
+  if (!row) return null;
+
+  const token = safeStorage.isEncryptionAvailable()
+    ? safeStorage.decryptString(row.encrypted_token)
+    : row.encrypted_token.toString("utf-8");
+
+  return {
+    domain: row.domain,
+    email: row.email,
+    token,
+    jql: row.jql,
+  };
 }
 
 export function createMeeting(db: DatabaseClient, payload: CreateMeetingInput): Meeting {
@@ -941,6 +962,8 @@ function toTask(row: {
   ownerContact?: string;
   escalationContact?: string;
   subtasksJson?: string;
+  jiraKey?: string;
+  jiraUrl?: string;
 }): Task {
   return {
     id: row.id,
@@ -961,6 +984,8 @@ function toTask(row: {
     ownerContact: row.ownerContact,
     escalationContact: row.escalationContact,
     subtasks: safeParseSubtasks(row.subtasksJson),
+    jiraKey: row.jiraKey,
+    jiraUrl: row.jiraUrl,
   };
 }
 

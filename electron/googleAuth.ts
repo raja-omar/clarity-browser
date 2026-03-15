@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import keytar from "keytar";
 import open from "open";
 import { google } from "googleapis";
@@ -51,6 +52,27 @@ function getBundledCredentials():
   return { clientId, clientSecret, redirectUri };
 }
 
+function getLocalConfigPath(): string | undefined {
+  const fileName = "googleOAuthClient.local.json";
+  const candidates: string[] = [
+    join(process.cwd(), "electron", fileName),
+    join(process.cwd(), fileName),
+  ];
+  if (typeof __dirname !== "undefined") {
+    candidates.unshift(join(__dirname, "..", "electron", fileName));
+    candidates.unshift(join(__dirname, fileName));
+  } else {
+    try {
+      const currentDir = dirname(fileURLToPath(import.meta.url));
+      candidates.unshift(join(currentDir, "..", "electron", fileName));
+      candidates.unshift(join(currentDir, fileName));
+    } catch {
+      // ESM fallback not available
+    }
+  }
+  return candidates.find((p) => existsSync(p));
+}
+
 function getLocalCredentials():
   | {
       clientId?: string;
@@ -58,8 +80,8 @@ function getLocalCredentials():
       redirectUri?: string;
     }
   | undefined {
-  const localConfigPath = join(process.cwd(), "electron", "googleOAuthClient.local.json");
-  if (!existsSync(localConfigPath)) return undefined;
+  const localConfigPath = getLocalConfigPath();
+  if (!localConfigPath) return undefined;
 
   try {
     const raw = readFileSync(localConfigPath, "utf8");
@@ -90,7 +112,7 @@ export function getGoogleAuthConfig(): { config?: GoogleAuthConfig; error?: stri
   if (!clientId || !clientSecret) {
     return {
       error:
-        "Google Calendar is not configured yet. Add your Google desktop OAuth client values to electron/googleOAuthClient.json.",
+        "Google Calendar is not configured. Create electron/googleOAuthClient.local.json with your Google OAuth client_id and client_secret (see electron/googleOAuthClient.json for the format). This file is gitignored and will not be pushed.",
     };
   }
 

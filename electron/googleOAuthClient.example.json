@@ -1,0 +1,7 @@
+{
+  "installed": {
+    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "client_secret": "YOUR_CLIENT_SECRET",
+    "redirect_uris": ["http://127.0.0.1:53682/oauth2callback"]
+  }
+}

@@ -1,11 +1,30 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { EnergyLog, TaskStatus } from "../renderer/types";
+import type {
+  CoachChatRequest,
+  CoachChatResponse,
+  CreateMeetingInput,
+  CreateTaskInput,
+  EnergyLog,
+  Meeting,
+  Task,
+  TaskStatus,
+  UserPreferences,
+} from "../renderer/types";
 
 contextBridge.exposeInMainWorld("clarity", {
   getBootstrap: () => ipcRenderer.invoke("clarity:get-bootstrap"),
   updateTaskStatus: (taskId: string, status: TaskStatus) =>
     ipcRenderer.invoke("clarity:update-task-status", { taskId, status }),
+  createTask: (payload: CreateTaskInput) => ipcRenderer.invoke("clarity:create-task", payload),
+  createMeeting: (payload: CreateMeetingInput) =>
+    ipcRenderer.invoke("clarity:create-meeting", payload),
+  saveUserPreferences: (payload: UserPreferences) =>
+    ipcRenderer.invoke("clarity:save-user-preferences", payload),
   saveEnergyLog: (payload: Omit<EnergyLog, "id" | "timestamp">) =>
     ipcRenderer.invoke("clarity:save-energy-log", payload),
   openExternal: (url: string) => ipcRenderer.invoke("clarity:open-external", url),
+  saveOpenAIApiKey: (apiKey: string) => ipcRenderer.invoke("clarity:save-openai-api-key", apiKey),
+  chatWithCoach: (payload: CoachChatRequest): Promise<CoachChatResponse> =>
+    ipcRenderer.invoke("clarity:chat-with-coach", payload),
+  hasOpenAIKey: (): Promise<{ configured: boolean }> => ipcRenderer.invoke("clarity:has-openai-key"),
 });

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AppBootstrap, Bookmark, BrowserTab } from "../types";
+import type { AppBootstrap, Bookmark, BrowserTab, CoachContextPayload } from "../types";
 
 interface BrowserState {
   tabs: BrowserTab[];
@@ -28,6 +28,7 @@ interface BrowserState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   closeTab: (tabId: string) => void;
   addTab: () => void;
+  openCoachTab: (context: CoachContextPayload) => void;
 }
 
 function normalizeInput(value: string): string {
@@ -66,11 +67,13 @@ export const useBrowserStore = create<BrowserState>((set) => ({
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         tab.id === state.activeTabId
-          ? {
-              ...tab,
-              url: normalizeInput(value),
-              title: value.length > 36 ? `${value.slice(0, 36)}...` : value,
-            }
+          ? tab.context === "coach"
+            ? tab
+            : {
+                ...tab,
+                url: normalizeInput(value),
+                title: value.length > 36 ? `${value.slice(0, 36)}...` : value,
+              }
           : tab,
       ),
     })),
@@ -110,6 +113,38 @@ export const useBrowserStore = create<BrowserState>((set) => ({
       };
       return {
         tabs: [...state.tabs, newTab],
+        activeTabId: id,
+      };
+    }),
+  openCoachTab: (context) =>
+    set((state) => {
+      const existingCoachTab = state.tabs.find((tab) => tab.context === "coach");
+      if (existingCoachTab) {
+        return {
+          tabs: state.tabs.map((tab) =>
+            tab.id === existingCoachTab.id
+              ? {
+                  ...tab,
+                  title: context.title ? `Coach: ${context.title}` : "AI Coach",
+                  coachContext: context,
+                }
+              : tab,
+          ),
+          activeTabId: existingCoachTab.id,
+        };
+      }
+
+      const id = `coach-${Date.now()}`;
+      const coachTab: BrowserTab = {
+        id,
+        title: context.title ? `Coach: ${context.title}` : "AI Coach",
+        url: "clarity://coach",
+        icon: "Bot",
+        context: "coach",
+        coachContext: context,
+      };
+      return {
+        tabs: [...state.tabs, coachTab],
         activeTabId: id,
       };
     }),

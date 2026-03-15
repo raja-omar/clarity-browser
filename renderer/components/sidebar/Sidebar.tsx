@@ -1,32 +1,17 @@
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  CalendarDays,
   Command,
+  HeartPulse,
   Globe,
-  Mail,
-  FileText,
   KanbanSquare,
-  Compass,
+  Sparkles,
   Sun,
   Eye,
   EyeOff,
-  type LucideIcon,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { BrowserTab } from "../../types";
-
-interface PinnedApp {
-  id: string;
-  label: string;
-  icon: LucideIcon;
-  url: string;
-}
-
-const pinnedApps: PinnedApp[] = [
-  { id: "gmail", label: "Gmail", icon: Mail, url: "https://mail.google.com" },
-  { id: "notion", label: "Notion", icon: FileText, url: "https://notion.so" },
-  { id: "linear", label: "Linear", icon: Compass, url: "https://linear.app" },
-  { id: "jira", label: "Jira", icon: KanbanSquare, url: "https://jira.atlassian.com" },
-];
 
 interface SidebarProps {
   tabs: BrowserTab[];
@@ -34,8 +19,11 @@ interface SidebarProps {
   collapsed: boolean;
   focusMode: boolean;
   onSelectTab: (tabId: string) => void;
-  onNavigate: (url: string) => void;
   onOpenCommandPalette: () => void;
+  onOpenTasks: () => void;
+  onOpenCalendar: () => void;
+  onOpenPersonalization: () => void;
+  onOpenHealth: () => void;
   onToggleCollapse: () => void;
 }
 
@@ -45,8 +33,11 @@ export function Sidebar({
   collapsed,
   focusMode,
   onSelectTab,
-  onNavigate,
   onOpenCommandPalette,
+  onOpenTasks,
+  onOpenCalendar,
+  onOpenPersonalization,
+  onOpenHealth,
   onToggleCollapse,
 }: SidebarProps) {
   return (
@@ -135,22 +126,49 @@ export function Sidebar({
             <>
               <div className="my-4 h-px bg-white/5" />
               <p className="mb-2 px-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">
-                Pinned Apps
+                Productivity
               </p>
               <div className="space-y-1">
-                {pinnedApps.map((app) => (
-                  <button
-                    key={app.id}
-                    type="button"
-                    onClick={() => onNavigate(app.url)}
-                    className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
-                  >
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/5">
-                      <app.icon className="h-3.5 w-3.5" />
-                    </div>
-                    <span className="text-[13px]">{app.label}</span>
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  onClick={onOpenTasks}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-200">
+                    <KanbanSquare className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-[13px]">Tasks</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenCalendar}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-200">
+                    <CalendarDays className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-[13px]">Calendar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenHealth}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-200">
+                    <HeartPulse className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-[13px]">Health Check-In</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenPersonalization}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-200">
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-[13px]">Personalization</span>
+                </button>
               </div>
             </>
           )}
@@ -159,41 +177,64 @@ export function Sidebar({
             <>
               <div className="my-3 h-px bg-white/5" />
               <div className="space-y-1">
-                {pinnedApps.map((app) => (
-                  <button
-                    key={app.id}
-                    type="button"
-                    onClick={() => onNavigate(app.url)}
-                    className="flex w-full items-center justify-center rounded-xl p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
-                    title={app.label}
-                  >
-                    <app.icon className="h-4 w-4" />
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  onClick={onOpenTasks}
+                  className="flex w-full items-center justify-center rounded-xl p-2 text-indigo-200 transition-colors hover:bg-white/5"
+                  title="Tasks"
+                >
+                  <KanbanSquare className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenCalendar}
+                  className="flex w-full items-center justify-center rounded-xl p-2 text-indigo-200 transition-colors hover:bg-white/5"
+                  title="Calendar"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenHealth}
+                  className="flex w-full items-center justify-center rounded-xl p-2 text-emerald-200 transition-colors hover:bg-white/5"
+                  title="Health Check-In"
+                >
+                  <HeartPulse className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenPersonalization}
+                  className="flex w-full items-center justify-center rounded-xl p-2 text-amber-200 transition-colors hover:bg-white/5"
+                  title="Personalization"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </button>
               </div>
             </>
           )}
         </div>
 
         <div className="mt-auto pt-3">
-          <button
-            type="button"
-            onClick={onOpenCommandPalette}
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 text-slate-300 transition hover:bg-white/[0.06]",
-              collapsed && "justify-center px-0",
-            )}
-          >
-            <Command className="h-4 w-4 shrink-0" />
-            {!collapsed && (
-              <span className="flex flex-1 items-center justify-between">
-                <span className="text-[13px]">Command</span>
-                <kbd className="rounded bg-white/8 px-1.5 py-0.5 text-[10px] text-slate-500">
-                  ⌘K
-                </kbd>
-              </span>
-            )}
-          </button>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={onOpenCommandPalette}
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 text-slate-300 transition hover:bg-white/[0.06]",
+                collapsed && "justify-center px-0",
+              )}
+            >
+              <Command className="h-4 w-4 shrink-0" />
+              {!collapsed && (
+                <span className="flex flex-1 items-center justify-between">
+                  <span className="text-[13px]">Command Guide</span>
+                  <kbd className="rounded bg-white/8 px-1.5 py-0.5 text-[10px] text-slate-500">
+                    ⌘K
+                  </kbd>
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </motion.aside>

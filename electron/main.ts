@@ -1,11 +1,21 @@
 import { app, ipcMain, shell } from "electron";
+import { chatWithCoach, hasConfiguredOpenAIKey, saveOpenAIApiKey } from "./aiCoach";
 import {
+  createMeeting,
+  createTask,
   createDatabase,
   getBootstrap,
+  saveUserPreferences,
   saveEnergyLog,
   type DatabaseClient,
   updateTaskStatus,
 } from "../database/db";
+import type {
+  CoachChatRequest,
+  CreateMeetingInput,
+  CreateTaskInput,
+  UserPreferences,
+} from "../renderer/types";
 import { createMainWindow } from "./windowManager";
 
 let mainWindow: ReturnType<typeof createMainWindow> | null = null;
@@ -28,6 +38,18 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle("clarity:create-task", (_event, payload: CreateTaskInput) => {
+    return createTask(getDatabase(), payload);
+  });
+
+  ipcMain.handle("clarity:create-meeting", (_event, payload: CreateMeetingInput) => {
+    return createMeeting(getDatabase(), payload);
+  });
+
+  ipcMain.handle("clarity:save-user-preferences", (_event, payload: UserPreferences) => {
+    return saveUserPreferences(getDatabase(), payload);
+  });
+
   ipcMain.handle(
     "clarity:save-energy-log",
     (
@@ -39,6 +61,18 @@ function registerIpc(): void {
   );
 
   ipcMain.handle("clarity:open-external", (_event, url: string) => shell.openExternal(url));
+
+  ipcMain.handle("clarity:save-openai-api-key", (_event, apiKey: string) =>
+    saveOpenAIApiKey(app.getPath("userData"), apiKey),
+  );
+
+  ipcMain.handle("clarity:chat-with-coach", (_event, payload: CoachChatRequest) =>
+    chatWithCoach(app.getPath("userData"), payload),
+  );
+
+  ipcMain.handle("clarity:has-openai-key", () =>
+    hasConfiguredOpenAIKey(app.getPath("userData")),
+  );
 }
 
 async function bootstrap(): Promise<void> {

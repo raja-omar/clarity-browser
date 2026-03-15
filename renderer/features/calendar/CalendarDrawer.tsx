@@ -1,15 +1,24 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { CalendarClock, Users, X } from "lucide-react";
+import { Bot, CalendarClock, Users, X } from "lucide-react";
 import { formatTime } from "../../lib/utils";
-import type { Meeting } from "../../types";
+import { trackCoachMetric } from "../../lib/coachMetrics";
+import type { CoachContextPayload, Meeting } from "../../types";
 
 interface CalendarDrawerProps {
   open: boolean;
   onClose: () => void;
   meetings: Meeting[];
+  onOpenAddMeetingModal: () => void;
+  onOpenCoach: (context: CoachContextPayload) => void;
 }
 
-export function CalendarDrawer({ open, onClose, meetings }: CalendarDrawerProps) {
+export function CalendarDrawer({
+  open,
+  onClose,
+  meetings,
+  onOpenAddMeetingModal,
+  onOpenCoach,
+}: CalendarDrawerProps) {
   const now = new Date();
   const upcoming = meetings.filter((m) => new Date(m.end).getTime() > now.getTime());
   const past = meetings.filter((m) => new Date(m.end).getTime() <= now.getTime());
@@ -40,13 +49,22 @@ export function CalendarDrawer({ open, onClose, meetings }: CalendarDrawerProps)
                   {upcoming.length} upcoming · {past.length} past
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg p-2 text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onOpenAddMeetingModal}
+                  className="rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2.5 py-1.5 text-xs text-indigo-200 transition hover:bg-indigo-500/15"
+                >
+                  Add meeting
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg p-2 text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="max-h-[60vh] overflow-y-auto soft-scrollbar px-5 py-4">
@@ -78,6 +96,31 @@ export function CalendarDrawer({ open, onClose, meetings }: CalendarDrawerProps)
                             {meeting.attendees} attendees
                           </span>
                           {meeting.notes && <span>{meeting.notes}</span>}
+                        </div>
+                        {meeting.hostName && (
+                          <p className="mt-2 text-[11px] text-slate-400">
+                            Host: {meeting.hostName}
+                            {meeting.hostContact ? ` (${meeting.hostContact})` : ""}
+                          </p>
+                        )}
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onOpenCoach(buildMeetingCoachContext(meeting));
+                              trackCoachMetric("action_cards_requested", {
+                                source: "calendar_drawer",
+                                contextSource: "meeting",
+                                trigger: "meeting_row_ai_next_step",
+                              });
+                            }}
+                            className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-100 transition hover:bg-emerald-500/15"
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              <Bot className="h-3.5 w-3.5" />
+                              AI next step
+                            </span>
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -119,4 +162,21 @@ export function CalendarDrawer({ open, onClose, meetings }: CalendarDrawerProps)
       )}
     </AnimatePresence>
   );
+}
+
+function buildMeetingCoachContext(meeting: Meeting): CoachContextPayload {
+  const hostName = meeting.hostName || "the host";
+  return {
+    source: "meeting",
+    title: meeting.title,
+    summary:
+      "Meeting listed in calendar drawer. Suggest one immediate prep action and a backup communication option if overloaded.",
+    dueAt: meeting.start,
+    hostName,
+    suggestedPrompts: [
+      "Give me one practical prep step for the next 10 minutes.",
+      "If I am overloaded, draft a concise async update message.",
+      "What should I ask first in this meeting to reduce ambiguity?",
+    ],
+  };
 }

@@ -7,7 +7,15 @@ CREATE TABLE IF NOT EXISTS tasks (
   status TEXT NOT NULL,
   priority TEXT NOT NULL,
   due_at TEXT,
-  notes TEXT
+  notes TEXT,
+  description TEXT,
+  task_type TEXT,
+  estimated_time_minutes INTEGER,
+  deadline TEXT,
+  owner_name TEXT,
+  owner_contact TEXT,
+  escalation_contact TEXT,
+  subtasks_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS meetings (
@@ -16,7 +24,17 @@ CREATE TABLE IF NOT EXISTS meetings (
   start TEXT NOT NULL,
   "end" TEXT NOT NULL,
   attendees INTEGER NOT NULL,
-  notes TEXT
+  notes TEXT,
+  description TEXT,
+  meeting_type TEXT,
+  attendees_list TEXT,
+  meeting_link TEXT,
+  notes_link TEXT,
+  recurring_rule TEXT,
+  travel_time_minutes INTEGER DEFAULT 0,
+  host_name TEXT,
+  host_contact TEXT,
+  host_preferred_channel TEXT
 );
 
 CREATE TABLE IF NOT EXISTS energy_logs (
@@ -25,4 +43,15 @@ CREATE TABLE IF NOT EXISTS energy_logs (
   sleep_hours REAL NOT NULL,
   mood INTEGER NOT NULL,
   energy TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+  id TEXT PRIMARY KEY,
+  sleep_pattern TEXT,
+  sleep_time TEXT,
+  wake_time TEXT,
+  focus_periods TEXT,
+  workday_start TEXT,
+  workday_end TEXT,
+  updated_at TEXT NOT NULL
 );

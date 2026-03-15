@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import type { BrowserTab, Task } from "../../types";
+import { CoachChatPane } from "../../features/ai/CoachChatPane";
 
 export interface BrowserViewportHandle {
   goBack: () => void;
@@ -64,14 +65,18 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
     }
 
     return (
-      <div className="relative flex-1 bg-slate-950/40">
+      <div className="webview-host relative flex-1 overflow-hidden">
         {activeTab ? (
-          <webview
-            ref={webviewRef}
-            className="h-full w-full"
-            src={activeTab.url}
-            partition="persist:clarity"
-          />
+          activeTab.context === "coach" ? (
+            <CoachChatPane context={activeTab.coachContext} />
+          ) : (
+            <webview
+              ref={webviewRef}
+              className="h-full w-full"
+              src={activeTab.url}
+              partition="persist:clarity"
+            />
+          )
         ) : (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-slate-500">Select a tab to begin.</p>

@@ -1,15 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { createFallbackBootstrap } from "../lib/integrations/mockData";
 import { ClarityLayout } from "./layout/ClarityLayout";
+import { AddTaskModal } from "../features/tasks/AddTaskModal";
+import { AddMeetingModal } from "../features/calendar/AddMeetingModal";
+import { PersonalizationWizard } from "../features/onboarding/PersonalizationWizard";
 import { useBrowserStore } from "../store/useBrowserStore";
 import { useTaskStore } from "../store/useTaskStore";
 import { useCalendarStore } from "../store/useCalendarStore";
 import { useEnergyStore } from "../store/useEnergyStore";
-import type { EnergyLevel } from "../types";
+import type { CreateMeetingInput, CreateTaskInput, EnergyLevel, UserPreferences } from "../types";
+import type { CoachContextPayload } from "../types";
+import {
+  collectDueSoonReminders,
+  type DueSoonReminder,
+} from "../features/notifications/reminderEngine";
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [addTaskModalOpen, setAddTaskModalOpen] = useState(false);
+  const [addMeetingModalOpen, setAddMeetingModalOpen] = useState(false);
+  const [personalizationOpen, setPersonalizationOpen] = useState(false);
+  const [userPreferences, setUserPreferences] = useState<UserPreferences | undefined>(undefined);
 
   const {
     tabs,
@@ -37,6 +49,7 @@ export default function App() {
     setSidebarCollapsed,
     closeTab,
     addTab,
+    openCoachTab,
   } = useBrowserStore();
 
   const {
@@ -53,6 +66,7 @@ export default function App() {
     schedule,
     initialize: initializeCalendar,
     recomputeSchedule,
+    addMeeting,
   } = useCalendarStore();
 
   const { logs, initialize: initializeEnergy, saveLog } = useEnergyStore();
@@ -67,6 +81,7 @@ export default function App() {
       initializeTasks(payload);
       initializeCalendar(payload);
       initializeEnergy(payload);
+      setUserPreferences(payload.userPreferences);
       setLoading(false);
     }
 
@@ -76,9 +91,13 @@ export default function App() {
   useEffect(() => {
     if (loading) return;
     recomputeSchedule(tasks, logs[0]);
-  }, [loading, logs, recomputeSchedule, tasks]);
+  }, [loading, logs, meetings, recomputeSchedule, tasks]);
 
   const [morningBriefOpen, setMorningBriefOpen] = useState(false);
+  const [dueSoonReminder, setDueSoonReminder] = useState<DueSoonReminder | undefined>(undefined);
+  const [pendingReminders, setPendingReminders] = useState<DueSoonReminder[]>([]);
+  const seenReminderKeys = useRef(new Set<string>());
+  const lastReminderScan = useRef<Date | undefined>(undefined);
 
   useEffect(() => {
     if (loading || morningBriefShown) return;
@@ -90,6 +109,47 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [loading, morningBriefShown, setMorningBriefShown]);
+
+  useEffect(() => {
+    if (!loading && !userPreferences) {
+      setPersonalizationOpen(true);
+    }
+  }, [loading, userPreferences]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const tick = () => {
+      const now = new Date();
+      const reminders = collectDueSoonReminders(tasks, meetings, now, lastReminderScan.current);
+      lastReminderScan.current = now;
+      if (reminders.length === 0) return;
+
+      setPendingReminders((current) => {
+        const existing = new Set(current.map((item) => item.key));
+        const next = [...current];
+        for (const reminder of reminders) {
+          if (seenReminderKeys.current.has(reminder.key)) continue;
+          if (dueSoonReminder?.key === reminder.key) continue;
+          if (existing.has(reminder.key)) continue;
+          seenReminderKeys.current.add(reminder.key);
+          next.push(reminder);
+        }
+        return next;
+      });
+    };
+
+    tick();
+    const interval = setInterval(tick, 30000);
+    return () => clearInterval(interval);
+  }, [dueSoonReminder?.key, loading, meetings, tasks]);
+
+  useEffect(() => {
+    if (dueSoonReminder || pendingReminders.length === 0) return;
+    const [nextReminder, ...rest] = pendingReminders;
+    setDueSoonReminder(nextReminder);
+    setPendingReminders(rest);
+  }, [dueSoonReminder, pendingReminders]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -153,6 +213,81 @@ export default function App() {
     });
   }
 
+  async function handleCreateTask(payload: CreateTaskInput): Promise<void> {
+    await addTask(payload);
+  }
+
+  async function handleCreateMeeting(payload: CreateMeetingInput): Promise<void> {
+    await addMeeting(payload);
+  }
+
+  async function handleSavePreferences(payload: UserPreferences): Promise<void> {
+    const saved = window.clarity
+      ? await window.clarity.saveUserPreferences(payload)
+      : payload;
+    setUserPreferences(saved);
+  }
+
+  function handleOpenCoach(context: CoachContextPayload): void {
+    openCoachTab(context);
+  }
+
+  function handleTriggerTestTaskPopup(): void {
+    const now = Date.now();
+    setDueSoonReminder({
+      key: `task:test-${now}:10`,
+      itemType: "task",
+      slotMinutes: 10,
+      dueAt: new Date(now + 10 * 60 * 1000).toISOString(),
+      task: {
+        id: "test-task-popup",
+        title: "Test ticket: API timeout investigation",
+        estimate: 40,
+        estimatedTimeMinutes: 40,
+        energy: "high",
+        source: "jira",
+        status: "todo",
+        priority: "high",
+        dueAt: new Date(now + 10 * 60 * 1000).toISOString(),
+        deadline: new Date(now + 10 * 60 * 1000).toISOString(),
+        description: "Hardcoded popup test task.",
+        ownerName: "Senior Dev Mina",
+        ownerContact: "@mina-dev",
+        escalationContact: "@eng-manager",
+        subtasks: [
+          { id: "test-sub-1", title: "Capture failing request logs", done: false },
+          { id: "test-sub-2", title: "Propose fix and review with owner", done: false },
+        ],
+        type: "focus",
+      },
+    });
+  }
+
+  function handleTriggerTestMeetingPopup(): void {
+    const now = Date.now();
+    setDueSoonReminder({
+      key: `meeting:test-${now}:10`,
+      itemType: "meeting",
+      slotMinutes: 10,
+      dueAt: new Date(now + 10 * 60 * 1000).toISOString(),
+      meeting: {
+        id: "test-meeting-popup",
+        title: "Test meeting: Design review handoff",
+        start: new Date(now + 10 * 60 * 1000).toISOString(),
+        end: new Date(now + 40 * 60 * 1000).toISOString(),
+        attendees: 4,
+        attendeeList: ["Omar", "Mina", "Alex", "Sam"],
+        description: "Hardcoded popup test meeting.",
+        notes: "Use this to test overwhelmed/unwell messaging flow.",
+        type: "dynamic",
+        meetingLink: "https://meet.google.com/demo-room",
+        hostName: "Mina (Host)",
+        hostContact: "mina@example.com",
+        hostPreferredChannel: "chat",
+      },
+    });
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -165,44 +300,72 @@ export default function App() {
   }
 
   return (
-    <ClarityLayout
-      tabs={tabs}
-      bookmarks={bookmarks}
-      activeTab={activeTab}
-      reliefMode={reliefMode}
-      focusMinutes={focusTimerMinutes}
-      commandPaletteOpen={commandPaletteOpen}
-      focusModeActive={focusModeActive}
-      taskDrawerOpen={taskDrawerOpen}
-      calendarDrawerOpen={calendarDrawerOpen}
-      contextDrawerOpen={contextDrawerOpen}
-      morningBriefOpen={morningBriefOpen}
-      sidebarCollapsed={sidebarCollapsed}
-      tasks={tasks}
-      selectedTask={selectedTask}
-      meetings={meetings}
-      schedule={schedule}
-      energyLogs={logs}
-      onSelectTab={setActiveTab}
-      onNavigate={navigateActiveTab}
-      onToggleReliefMode={toggleReliefMode}
-      onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-      onCommandPaletteOpenChange={setCommandPaletteOpen}
-      onSelectTask={selectTask}
-      onUpdateTaskStatus={(id, status) => void updateTaskStatus(id, status)}
-      onLogEnergy={(energy) => void handleLogEnergy(energy)}
-      onOpenExternal={(url) =>
-        window.clarity ? void window.clarity.openExternal(url) : window.open(url, "_blank")
-      }
-      onSetFocusMode={setFocusModeActive}
-      onSetTaskDrawer={setTaskDrawerOpen}
-      onSetCalendarDrawer={setCalendarDrawerOpen}
-      onSetContextDrawer={setContextDrawerOpen}
-      onSetMorningBrief={(open) => setMorningBriefOpen(open)}
-      onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
-      onCloseTab={closeTab}
-      onNewTab={addTab}
-      onAddTask={addTask}
-    />
+    <>
+      <ClarityLayout
+        tabs={tabs}
+        bookmarks={bookmarks}
+        activeTab={activeTab}
+        reliefMode={reliefMode}
+        focusMinutes={focusTimerMinutes}
+        commandPaletteOpen={commandPaletteOpen}
+        focusModeActive={focusModeActive}
+        taskDrawerOpen={taskDrawerOpen}
+        calendarDrawerOpen={calendarDrawerOpen}
+        contextDrawerOpen={contextDrawerOpen}
+        morningBriefOpen={morningBriefOpen}
+        sidebarCollapsed={sidebarCollapsed}
+        tasks={tasks}
+        selectedTask={selectedTask}
+        meetings={meetings}
+        schedule={schedule}
+        energyLogs={logs}
+        onSelectTab={setActiveTab}
+        onNavigate={navigateActiveTab}
+        onToggleReliefMode={toggleReliefMode}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onCommandPaletteOpenChange={setCommandPaletteOpen}
+        onSelectTask={selectTask}
+        onUpdateTaskStatus={(id, status) => void updateTaskStatus(id, status)}
+        onLogEnergy={(energy) => void handleLogEnergy(energy)}
+        onOpenExternal={(url) =>
+          window.clarity ? void window.clarity.openExternal(url) : window.open(url, "_blank")
+        }
+        onSetFocusMode={setFocusModeActive}
+        onSetTaskDrawer={setTaskDrawerOpen}
+        onSetCalendarDrawer={setCalendarDrawerOpen}
+        onSetContextDrawer={setContextDrawerOpen}
+        onSetMorningBrief={(open) => setMorningBriefOpen(open)}
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        onCloseTab={closeTab}
+        onNewTab={addTab}
+        onAddTask={(title) => void addTask(title)}
+        onOpenAddTaskModal={() => setAddTaskModalOpen(true)}
+        onOpenAddMeetingModal={() => setAddMeetingModalOpen(true)}
+        onOpenPersonalization={() => setPersonalizationOpen(true)}
+        onOpenHealthCheckIn={() => setMorningBriefOpen(true)}
+        dueSoonReminder={dueSoonReminder}
+        dueSoonReminderOpen={Boolean(dueSoonReminder)}
+        onCloseDueSoonReminder={() => setDueSoonReminder(undefined)}
+        onOpenCoach={handleOpenCoach}
+        onTriggerTestTaskPopup={handleTriggerTestTaskPopup}
+        onTriggerTestMeetingPopup={handleTriggerTestMeetingPopup}
+      />
+      <AddTaskModal
+        open={addTaskModalOpen}
+        onOpenChange={setAddTaskModalOpen}
+        onSubmit={handleCreateTask}
+      />
+      <AddMeetingModal
+        open={addMeetingModalOpen}
+        onOpenChange={setAddMeetingModalOpen}
+        onSubmit={handleCreateMeeting}
+      />
+      <PersonalizationWizard
+        open={personalizationOpen}
+        initialValue={userPreferences}
+        onOpenChange={setPersonalizationOpen}
+        onComplete={handleSavePreferences}
+      />
+    </>
   );
 }

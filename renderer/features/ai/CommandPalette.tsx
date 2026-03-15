@@ -29,6 +29,8 @@ interface CommandPaletteProps {
   onStartFocus: () => void;
   onToggleReliefMode: () => void;
   onOpenContext: () => void;
+  onOpenPersonalization: () => void;
+  onOpenCoach: () => void;
 }
 
 interface QuickAction {
@@ -53,6 +55,8 @@ export function CommandPalette({
   onStartFocus,
   onToggleReliefMode,
   onOpenContext,
+  onOpenPersonalization,
+  onOpenCoach,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
 
@@ -87,6 +91,20 @@ export function CommandPalette({
         action: onOpenContext,
       },
       {
+        id: "coach",
+        label: "Open AI Coach",
+        hint: "",
+        icon: Bot,
+        action: onOpenCoach,
+      },
+      {
+        id: "personalization",
+        label: "Open Personalization Wizard",
+        hint: "",
+        icon: Command,
+        action: onOpenPersonalization,
+      },
+      {
         id: "relief",
         label: "Toggle Relief Mode",
         hint: "",
@@ -94,7 +112,15 @@ export function CommandPalette({
         action: onToggleReliefMode,
       },
     ],
-    [onOpenTasks, onOpenCalendar, onStartFocus, onOpenContext, onToggleReliefMode],
+    [
+      onOpenTasks,
+      onOpenCalendar,
+      onStartFocus,
+      onOpenContext,
+      onOpenCoach,
+      onOpenPersonalization,
+      onToggleReliefMode,
+    ],
   );
 
   const results = useMemo(() => {

@@ -13,6 +13,7 @@ interface TaskDrawerProps {
   onUpdateStatus: (taskId: string, status: Task["status"]) => void;
   onStartFocus: (taskId: string) => void;
   onAddTask: (title: string) => void;
+  onOpenAddTaskModal: () => void;
 }
 
 const energyTone: Record<Task["energy"], string> = {
@@ -30,6 +31,7 @@ export function TaskDrawer({
   onUpdateStatus,
   onStartFocus,
   onAddTask,
+  onOpenAddTaskModal,
 }: TaskDrawerProps) {
   const [showAddInput, setShowAddInput] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -75,9 +77,19 @@ export function TaskDrawer({
                 <button
                   type="button"
                   onClick={() => setShowAddInput(!showAddInput)}
-                  className="rounded-lg border border-white/8 bg-white/[0.03] p-2 text-slate-300 transition hover:bg-white/[0.06]"
+                  className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300 transition hover:bg-white/[0.06]"
                 >
-                  <Plus className="h-4 w-4" />
+                  Quick
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenAddTaskModal}
+                  className="rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2.5 py-1.5 text-xs text-indigo-200 transition hover:bg-indigo-500/15"
+                >
+                  <span className="inline-flex items-center gap-1">
+                    <Plus className="h-3.5 w-3.5" />
+                    New
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -157,6 +169,12 @@ export function TaskDrawer({
                             <p className="mt-1 text-xs text-slate-500">
                               {task.source} · {task.estimate}min · {formatRelativeDue(task.dueAt)}
                             </p>
+                            {task.ownerName && (
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                Owner: {task.ownerName}
+                                {task.ownerContact ? ` (${task.ownerContact})` : ""}
+                              </p>
+                            )}
                           </div>
                           <span
                             className={cn(
@@ -201,6 +219,26 @@ export function TaskDrawer({
                           </span>
                         </button>
                       </div>
+                      {task.subtasks && task.subtasks.length > 0 && (
+                        <div className="mt-3 rounded-lg border border-white/5 bg-white/[0.02] p-2.5">
+                          <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                            Subtasks
+                          </p>
+                          <div className="mt-1.5 space-y-1">
+                            {task.subtasks.slice(0, 3).map((subtask) => (
+                              <p
+                                key={subtask.id}
+                                className={cn(
+                                  "text-[11px]",
+                                  subtask.done ? "text-emerald-300/80 line-through" : "text-slate-300",
+                                )}
+                              >
+                                {subtask.title}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </motion.div>
                   );
                 })}

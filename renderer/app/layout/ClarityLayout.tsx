@@ -9,15 +9,18 @@ import { CalendarDrawer } from "../../features/calendar/CalendarDrawer";
 import { ContextDrawer } from "../../features/ai/ContextDrawer";
 import { FocusModeOverlay } from "../../features/ai/FocusModeOverlay";
 import { MorningBriefModal } from "../../features/ai/MorningBriefModal";
+import { DueSoonPopup } from "../../features/notifications/DueSoonPopup";
 import type {
   Bookmark,
   BrowserTab,
+  CoachContextPayload,
   EnergyLevel,
   EnergyLog,
   Meeting,
   ScheduleBlock,
   Task,
 } from "../../types";
+import type { DueSoonReminder } from "../../features/notifications/reminderEngine";
 
 interface ClarityLayoutProps {
   tabs: BrowserTab[];
@@ -55,6 +58,16 @@ interface ClarityLayoutProps {
   onCloseTab: (tabId: string) => void;
   onNewTab: () => void;
   onAddTask: (title: string) => void;
+  onOpenAddTaskModal: () => void;
+  onOpenAddMeetingModal: () => void;
+  onOpenPersonalization: () => void;
+  onOpenHealthCheckIn: () => void;
+  dueSoonReminder?: DueSoonReminder;
+  dueSoonReminderOpen: boolean;
+  onCloseDueSoonReminder: () => void;
+  onOpenCoach: (context: CoachContextPayload) => void;
+  onTriggerTestTaskPopup: () => void;
+  onTriggerTestMeetingPopup: () => void;
 }
 
 export function ClarityLayout({
@@ -93,6 +106,16 @@ export function ClarityLayout({
   onCloseTab,
   onNewTab,
   onAddTask,
+  onOpenAddTaskModal,
+  onOpenAddMeetingModal,
+  onOpenPersonalization,
+  onOpenHealthCheckIn,
+  dueSoonReminder,
+  dueSoonReminderOpen,
+  onCloseDueSoonReminder,
+  onOpenCoach,
+  onTriggerTestTaskPopup,
+  onTriggerTestMeetingPopup,
 }: ClarityLayoutProps) {
   const viewportRef = useRef<BrowserViewportHandle>(null);
 
@@ -111,13 +134,16 @@ export function ClarityLayout({
           collapsed={sidebarCollapsed}
           focusMode={focusModeActive}
           onSelectTab={onSelectTab}
-          onNavigate={onNavigate}
           onOpenCommandPalette={onOpenCommandPalette}
+          onOpenTasks={() => onSetTaskDrawer(true)}
+          onOpenCalendar={() => onSetCalendarDrawer(true)}
+          onOpenPersonalization={onOpenPersonalization}
+          onOpenHealth={onOpenHealthCheckIn}
           onToggleCollapse={onToggleSidebar}
         />
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-0">
-          <div className="glass-panel flex flex-col overflow-hidden rounded-2xl flex-1">
+          <div className="browser-shell flex flex-1 flex-col overflow-hidden rounded-2xl">
             <div className="flex items-center gap-2 border-b border-white/5 px-3 py-2">
               <TabBar
                 tabs={tabs}
@@ -130,6 +156,7 @@ export function ClarityLayout({
 
             <BrowserToolbar
               activeTab={activeTab}
+              tabs={tabs}
               bookmarks={bookmarks}
               onNavigate={onNavigate}
               onOpenCommandPalette={onOpenCommandPalette}
@@ -164,12 +191,15 @@ export function ClarityLayout({
         onUpdateStatus={onUpdateTaskStatus}
         onStartFocus={handleStartFocus}
         onAddTask={onAddTask}
+        onOpenAddTaskModal={onOpenAddTaskModal}
       />
 
       <CalendarDrawer
         open={calendarDrawerOpen}
         onClose={() => onSetCalendarDrawer(false)}
         meetings={meetings}
+        onOpenAddMeetingModal={onOpenAddMeetingModal}
+        onOpenCoach={onOpenCoach}
       />
 
       <ContextDrawer
@@ -206,7 +236,39 @@ export function ClarityLayout({
         }}
         onToggleReliefMode={onToggleReliefMode}
         onOpenContext={() => onSetContextDrawer(true)}
+        onOpenPersonalization={onOpenPersonalization}
+        onOpenCoach={() =>
+          onOpenCoach({
+            source: "general",
+            title: "General guidance",
+            summary: "Help me prioritize and communicate clearly when I feel overwhelmed.",
+          })
+        }
       />
+
+      <DueSoonPopup
+        reminder={dueSoonReminder}
+        open={dueSoonReminderOpen}
+        onClose={onCloseDueSoonReminder}
+        onOpenCoach={onOpenCoach}
+      />
+
+      <div className="fixed bottom-5 left-5 z-[81] flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/90 p-2 backdrop-blur">
+        <button
+          type="button"
+          onClick={onTriggerTestTaskPopup}
+          className="rounded-lg border border-indigo-400/25 bg-indigo-500/15 px-3 py-1.5 text-xs text-indigo-100 transition hover:bg-indigo-500/25"
+        >
+          Test task popup
+        </button>
+        <button
+          type="button"
+          onClick={onTriggerTestMeetingPopup}
+          className="rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-3 py-1.5 text-xs text-emerald-100 transition hover:bg-emerald-500/25"
+        >
+          Test meeting popup
+        </button>
+      </div>
     </>
   );
 }

@@ -9,7 +9,14 @@ import { useBrowserStore } from "../store/useBrowserStore";
 import { useTaskStore } from "../store/useTaskStore";
 import { useCalendarStore } from "../store/useCalendarStore";
 import { useEnergyStore } from "../store/useEnergyStore";
-import type { CreateMeetingInput, CreateTaskInput, EnergyLevel, UserPreferences } from "../types";
+import type {
+  CreateMeetingInput,
+  CreateTaskInput,
+  EnergyLevel,
+  Meeting,
+  UpdateMeetingSupportInput,
+  UserPreferences,
+} from "../types";
 import type { CoachContextPayload } from "../types";
 import {
   collectDueSoonReminders,
@@ -81,6 +88,7 @@ export default function App() {
     initialize: initializeCalendar,
     recomputeSchedule,
     addMeeting,
+    updateMeetingSupport,
   } = useCalendarStore();
 
   const { logs, initialize: initializeEnergy, saveLog } = useEnergyStore();
@@ -110,6 +118,7 @@ export default function App() {
   const [morningBriefOpen, setMorningBriefOpen] = useState(false);
   const [dueSoonReminder, setDueSoonReminder] = useState<DueSoonReminder | undefined>(undefined);
   const [pendingReminders, setPendingReminders] = useState<DueSoonReminder[]>([]);
+  const [testMeetingDetails, setTestMeetingDetails] = useState<Meeting | undefined>(undefined);
   const seenReminderKeys = useRef(new Set<string>());
   const lastReminderScan = useRef<Date | undefined>(undefined);
 
@@ -235,6 +244,38 @@ export default function App() {
     await addMeeting(payload);
   }
 
+  async function handleUpdateMeetingSupport(
+    payload: UpdateMeetingSupportInput,
+  ): Promise<Meeting | undefined> {
+    const updated = await updateMeetingSupport(payload);
+    const resolvedMeeting =
+      updated ??
+      (payload.meetingId === "test-meeting-popup"
+        ? {
+            ...(dueSoonReminder?.itemType === "meeting" && dueSoonReminder.meeting?.id === payload.meetingId
+              ? dueSoonReminder.meeting
+              : testMeetingDetails ?? buildTestMeeting(Date.now())),
+            prepChecklist: payload.prepChecklist ?? testMeetingDetails?.prepChecklist ?? [],
+            rescheduleReason: payload.rescheduleReason,
+            rescheduleEmailDraft: payload.rescheduleEmailDraft ?? testMeetingDetails?.rescheduleEmailDraft,
+          }
+        : undefined);
+
+    if (resolvedMeeting?.id === "test-meeting-popup") {
+      setTestMeetingDetails(resolvedMeeting);
+    }
+
+    if (resolvedMeeting) {
+      setDueSoonReminder((current) =>
+        current?.itemType === "meeting" && current.meeting?.id === resolvedMeeting.id
+          ? { ...current, meeting: resolvedMeeting }
+          : current,
+      );
+    }
+
+    return resolvedMeeting;
+  }
+
   async function handleSavePreferences(payload: UserPreferences): Promise<void> {
     const saved = window.clarity
       ? await window.clarity.saveUserPreferences(payload)
@@ -280,27 +321,15 @@ export default function App() {
 
   function handleTriggerTestMeetingPopup(): void {
     const now = Date.now();
+    const meeting = buildTestMeeting(now, testMeetingDetails);
     setDueSoonReminder({
       key: `meeting:test-${now}:10`,
       itemType: "meeting",
       slotMinutes: 10,
       dueAt: new Date(now + 10 * 60 * 1000).toISOString(),
-      meeting: {
-        id: "test-meeting-popup",
-        title: "Test meeting: Design review handoff",
-        start: new Date(now + 10 * 60 * 1000).toISOString(),
-        end: new Date(now + 40 * 60 * 1000).toISOString(),
-        attendees: 4,
-        attendeeList: ["Omar", "Mina", "Alex", "Sam"],
-        description: "Hardcoded popup test meeting.",
-        notes: "Use this to test overwhelmed/unwell messaging flow.",
-        type: "dynamic",
-        meetingLink: "https://meet.google.com/demo-room",
-        hostName: "Mina (Host)",
-        hostContact: "mina@example.com",
-        hostPreferredChannel: "chat",
-      },
+      meeting,
     });
+    setTestMeetingDetails(meeting);
   }
 
   if (loading) {
@@ -375,6 +404,7 @@ export default function App() {
         dueSoonReminderOpen={Boolean(dueSoonReminder)}
         onCloseDueSoonReminder={() => setDueSoonReminder(undefined)}
         onOpenCoach={handleOpenCoach}
+        onUpdateMeetingSupport={handleUpdateMeetingSupport}
         onTriggerTestTaskPopup={handleTriggerTestTaskPopup}
         onTriggerTestMeetingPopup={handleTriggerTestMeetingPopup}
       />
@@ -396,4 +426,24 @@ export default function App() {
       />
     </>
   );
+}
+
+function buildTestMeeting(now: number, existing?: Meeting): Meeting {
+  return {
+    id: "test-meeting-popup",
+    title: "Test meeting: Design review handoff",
+    start: new Date(now + 10 * 60 * 1000).toISOString(),
+    end: new Date(now + 40 * 60 * 1000).toISOString(),
+    attendees: 4,
+    attendeeList: ["Omar", "Mina", "Alex", "Sam"],
+    description: "Hardcoded popup test meeting.",
+    notes: "Use this to test prepare and reschedule flows.",
+    type: "dynamic",
+    meetingLink: "https://meet.google.com/demo-room",
+    hostName: "Mina (Host)",
+    hostContact: "mina@example.com",
+    hostPreferredChannel: "chat",
+    prepChecklist: existing?.prepChecklist ?? [],
+    rescheduleEmailDraft: existing?.rescheduleEmailDraft,
+  };
 }

@@ -11,6 +11,7 @@ import {
   saveUserPreferences,
   saveEnergyLog,
   type DatabaseClient,
+  updateMeetingSupport,
   updateTaskStatus,
   upsertJiraTasks,
 } from "../database/db";
@@ -20,6 +21,7 @@ import type {
   CreateMeetingInput,
   CreateTaskInput,
   JiraSettings,
+  UpdateMeetingSupportInput,
   UserPreferences,
 } from "../renderer/types";
 import { createMainWindow } from "./windowManager";
@@ -76,6 +78,10 @@ function registerIpc(): void {
 
   ipcMain.handle("clarity:create-meeting", (_event, payload: CreateMeetingInput) => {
     return createMeeting(getDatabase(), payload);
+  });
+
+  ipcMain.handle("clarity:update-meeting-support", (_event, payload: UpdateMeetingSupportInput) => {
+    return updateMeetingSupport(getDatabase(), payload);
   });
 
   ipcMain.handle("clarity:save-user-preferences", (_event, payload: UserPreferences) => {

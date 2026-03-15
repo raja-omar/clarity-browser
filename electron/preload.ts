@@ -9,6 +9,7 @@ import type {
   Meeting,
   Task,
   TaskStatus,
+  UpdateMeetingSupportInput,
   UserPreferences,
 } from "../renderer/types";
 
@@ -19,6 +20,8 @@ contextBridge.exposeInMainWorld("clarity", {
   createTask: (payload: CreateTaskInput) => ipcRenderer.invoke("clarity:create-task", payload),
   createMeeting: (payload: CreateMeetingInput) =>
     ipcRenderer.invoke("clarity:create-meeting", payload),
+  updateMeetingSupport: (payload: UpdateMeetingSupportInput) =>
+    ipcRenderer.invoke("clarity:update-meeting-support", payload) as Promise<Meeting | undefined>,
   saveUserPreferences: (payload: UserPreferences) =>
     ipcRenderer.invoke("clarity:save-user-preferences", payload),
   saveEnergyLog: (payload: Omit<EnergyLog, "id" | "timestamp">) =>

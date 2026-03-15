@@ -97,6 +97,34 @@ export function CalendarDrawer({
                           </span>
                           {meeting.notes && <span>{meeting.notes}</span>}
                         </div>
+                        {meeting.prepChecklist && meeting.prepChecklist.length > 0 && (
+                          <div className="mt-3 rounded-lg border border-white/5 bg-black/15 p-3">
+                            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                              Meeting details
+                            </p>
+                            <p className="mt-2 text-xs text-slate-300">
+                              Prep checklist: {meeting.prepChecklist.filter((item) => item.done).length}/
+                              {meeting.prepChecklist.length} done
+                            </p>
+                            <ul className="mt-2 space-y-1 text-xs text-slate-400">
+                              {meeting.prepChecklist.slice(0, 3).map((item) => (
+                                <li key={item.id}>
+                                  {item.done ? "Done" : "Todo"}: {item.title}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {meeting.rescheduleEmailDraft && (
+                          <div className="mt-3 rounded-lg border border-amber-400/10 bg-amber-500/5 p-3">
+                            <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200/75">
+                              Reschedule support
+                            </p>
+                            <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs text-slate-400">
+                              {meeting.rescheduleEmailDraft}
+                            </p>
+                          </div>
+                        )}
                         {meeting.hostName && (
                           <p className="mt-2 text-[11px] text-slate-400">
                             Host: {meeting.hostName}

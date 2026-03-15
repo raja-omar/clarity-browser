@@ -9,9 +9,11 @@ import type {
   HostPreferredChannel,
   JiraSettings,
   Meeting,
+  MeetingPrepItem,
   Task,
   TaskSubtask,
   TaskStatus,
+  UpdateMeetingSupportInput,
   UserPreferences,
 } from "../renderer/types";
 import { createStarterTabs } from "../electron/tabsManager";
@@ -58,7 +60,10 @@ const SCHEMA_SQL = `
     travel_time_minutes INTEGER DEFAULT 0,
     host_name TEXT,
     host_contact TEXT,
-    host_preferred_channel TEXT
+    host_preferred_channel TEXT,
+    prep_checklist_json TEXT,
+    reschedule_reason TEXT,
+    reschedule_email_draft TEXT
   );
 
   CREATE TABLE IF NOT EXISTS energy_logs (
@@ -168,6 +173,15 @@ function applyBackwardCompatibleMigrations(db: DatabaseClient): void {
   if (!hasColumn("meetings", "host_preferred_channel")) {
     db.exec("ALTER TABLE meetings ADD COLUMN host_preferred_channel TEXT");
   }
+  if (!hasColumn("meetings", "prep_checklist_json")) {
+    db.exec("ALTER TABLE meetings ADD COLUMN prep_checklist_json TEXT");
+  }
+  if (!hasColumn("meetings", "reschedule_reason")) {
+    db.exec("ALTER TABLE meetings ADD COLUMN reschedule_reason TEXT");
+  }
+  if (!hasColumn("meetings", "reschedule_email_draft")) {
+    db.exec("ALTER TABLE meetings ADD COLUMN reschedule_email_draft TEXT");
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS jira_settings (
@@ -270,8 +284,19 @@ function seedDatabase(db: DatabaseClient): void {
 
     for (const task of starterTasks) {
       insertTask.run({
-        ...task,
-        subtasksJson: task.subtasks ? JSON.stringify(task.subtasks) : undefined,
+        id: task.id,
+        title: task.title,
+        estimate: task.estimate,
+        energy: task.energy,
+        source: task.source,
+        status: task.status,
+        priority: task.priority,
+        dueAt: task.dueAt ?? null,
+        notes: task.notes ?? null,
+        ownerName: task.ownerName ?? null,
+        ownerContact: task.ownerContact ?? null,
+        escalationContact: task.escalationContact ?? null,
+        subtasksJson: task.subtasks ? JSON.stringify(task.subtasks) : null,
       });
     }
   }
@@ -436,7 +461,10 @@ export function getBootstrap(db: DatabaseClient): AppBootstrap {
         travel_time_minutes as travelTimeMinutes,
         host_name as hostName,
         host_contact as hostContact,
-        host_preferred_channel as hostPreferredChannel
+        host_preferred_channel as hostPreferredChannel,
+        prep_checklist_json as prepChecklistJson,
+        reschedule_reason as rescheduleReason,
+        reschedule_email_draft as rescheduleEmailDraft
       FROM meetings
       ORDER BY start
     `,
@@ -458,6 +486,9 @@ export function getBootstrap(db: DatabaseClient): AppBootstrap {
     hostName?: string;
     hostContact?: string;
     hostPreferredChannel?: HostPreferredChannel;
+    prepChecklistJson?: string;
+    rescheduleReason?: string;
+    rescheduleEmailDraft?: string;
   }>;
   const meetings = meetingRows.map(toMeeting);
 
@@ -488,6 +519,78 @@ export function updateTaskStatus(
   status: TaskStatus,
 ): void {
   db.prepare("UPDATE tasks SET status = ? WHERE id = ?").run(status, taskId);
+}
+
+export function updateMeetingSupport(
+  db: DatabaseClient,
+  payload: UpdateMeetingSupportInput,
+): Meeting | undefined {
+  db.prepare(`
+    UPDATE meetings
+    SET
+      prep_checklist_json = @prepChecklistJson,
+      reschedule_reason = @rescheduleReason,
+      reschedule_email_draft = @rescheduleEmailDraft
+    WHERE id = @meetingId
+  `).run({
+    meetingId: payload.meetingId,
+    prepChecklistJson: payload.prepChecklist?.length ? JSON.stringify(payload.prepChecklist) : null,
+    rescheduleReason: payload.rescheduleReason?.trim() || null,
+    rescheduleEmailDraft: payload.rescheduleEmailDraft?.trim() || null,
+  });
+
+  const row = db
+    .prepare(
+      `
+      SELECT
+        id,
+        title,
+        start,
+        "end" as end,
+        attendees,
+        notes,
+        description,
+        meeting_type as type,
+        attendees_list as attendeeListJson,
+        meeting_link as meetingLink,
+        notes_link as notesLink,
+        recurring_rule as recurringRule,
+        travel_time_minutes as travelTimeMinutes,
+        host_name as hostName,
+        host_contact as hostContact,
+        host_preferred_channel as hostPreferredChannel,
+        prep_checklist_json as prepChecklistJson,
+        reschedule_reason as rescheduleReason,
+        reschedule_email_draft as rescheduleEmailDraft
+      FROM meetings
+      WHERE id = ?
+    `,
+    )
+    .get(payload.meetingId) as
+    | {
+        id: string;
+        title: string;
+        start: string;
+        end: string;
+        attendees: number;
+        notes?: string;
+        description?: string;
+        type?: Meeting["type"];
+        attendeeListJson?: string;
+        meetingLink?: string;
+        notesLink?: string;
+        recurringRule?: string;
+        travelTimeMinutes?: number;
+        hostName?: string;
+        hostContact?: string;
+        hostPreferredChannel?: HostPreferredChannel;
+        prepChecklistJson?: string;
+        rescheduleReason?: string;
+        rescheduleEmailDraft?: string;
+      }
+    | undefined;
+
+  return row ? toMeeting(row) : undefined;
 }
 
 export function getAllTasks(db: DatabaseClient): Task[] {
@@ -944,6 +1047,32 @@ function safeParseStringArray(value?: string): string[] {
   }
 }
 
+function safeParseMeetingPrepItems(value?: string): MeetingPrepItem[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item, index) => {
+        if (!item || typeof item !== "object") return undefined;
+        const record = item as Record<string, unknown>;
+        const title = typeof record.title === "string" ? record.title.trim() : "";
+        if (!title) return undefined;
+        return {
+          id:
+            typeof record.id === "string" && record.id.trim()
+              ? record.id.trim()
+              : `meeting-prep-${index + 1}`,
+          title,
+          done: Boolean(record.done),
+        };
+      })
+      .filter((item): item is MeetingPrepItem => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
 function toTask(row: {
   id: string;
   title: string;
@@ -1006,6 +1135,9 @@ function toMeeting(row: {
   hostName?: string;
   hostContact?: string;
   hostPreferredChannel?: HostPreferredChannel;
+  prepChecklistJson?: string;
+  rescheduleReason?: string;
+  rescheduleEmailDraft?: string;
 }): Meeting {
   const attendeeList = safeParseStringArray(row.attendeeListJson);
   return {
@@ -1025,6 +1157,9 @@ function toMeeting(row: {
     hostName: row.hostName,
     hostContact: row.hostContact,
     hostPreferredChannel: row.hostPreferredChannel,
+    prepChecklist: safeParseMeetingPrepItems(row.prepChecklistJson),
+    rescheduleReason: row.rescheduleReason,
+    rescheduleEmailDraft: row.rescheduleEmailDraft,
   };
 }
 

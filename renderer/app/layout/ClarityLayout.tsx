@@ -79,6 +79,9 @@ interface ClarityLayoutProps {
   dueSoonReminderOpen: boolean;
   onCloseDueSoonReminder: () => void;
   onOpenCoach: (context: CoachContextPayload) => void;
+  onUpdateMeetingSupport: (
+    payload: import("../../types").UpdateMeetingSupportInput,
+  ) => Promise<Meeting | undefined>;
   onTriggerTestTaskPopup: () => void;
   onTriggerTestMeetingPopup: () => void;
 }
@@ -140,6 +143,7 @@ export function ClarityLayout({
   dueSoonReminderOpen,
   onCloseDueSoonReminder,
   onOpenCoach,
+  onUpdateMeetingSupport,
   onTriggerTestTaskPopup,
   onTriggerTestMeetingPopup,
 }: ClarityLayoutProps) {
@@ -294,23 +298,35 @@ export function ClarityLayout({
         open={dueSoonReminderOpen}
         onClose={onCloseDueSoonReminder}
         onOpenCoach={onOpenCoach}
+        onUpdateMeetingSupport={onUpdateMeetingSupport}
       />
 
-      <div className="fixed bottom-5 left-5 z-[81] flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/90 p-2 backdrop-blur">
-        <button
-          type="button"
-          onClick={onTriggerTestTaskPopup}
-          className="rounded-lg border border-indigo-400/25 bg-indigo-500/15 px-3 py-1.5 text-xs text-indigo-100 transition hover:bg-indigo-500/25"
-        >
-          Test task popup
-        </button>
-        <button
-          type="button"
-          onClick={onTriggerTestMeetingPopup}
-          className="rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-3 py-1.5 text-xs text-emerald-100 transition hover:bg-emerald-500/25"
-        >
-          Test meeting popup
-        </button>
+      <div
+        className="fixed bottom-5 left-5 z-[81] rounded-xl border border-white/10 bg-slate-950/90 p-2 backdrop-blur"
+        style={{ width: sidebarCollapsed ? 64 : 260 }}
+      >
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={onTriggerTestTaskPopup}
+            className={`rounded-xl border border-indigo-400/30 bg-indigo-500/15 px-3 py-2 text-xs font-medium text-indigo-100 shadow-[0_0_0_1px_rgba(99,102,241,0.08)] transition duration-150 hover:-translate-y-0.5 hover:border-indigo-300/45 hover:bg-indigo-500/25 hover:shadow-[0_10px_30px_rgba(79,70,229,0.18)] active:translate-y-0 active:scale-[0.99] ${
+              sidebarCollapsed ? "w-full" : "w-full text-left"
+            }`}
+            title="Incoming Task CheckIn"
+          >
+            {sidebarCollapsed ? "Task" : "Incoming Task CheckIn"}
+          </button>
+          <button
+            type="button"
+            onClick={onTriggerTestMeetingPopup}
+            className={`rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-xs font-medium text-emerald-100 shadow-[0_0_0_1px_rgba(16,185,129,0.08)] transition duration-150 hover:-translate-y-0.5 hover:border-emerald-300/45 hover:bg-emerald-500/25 hover:shadow-[0_10px_30px_rgba(16,185,129,0.18)] active:translate-y-0 active:scale-[0.99] ${
+              sidebarCollapsed ? "w-full" : "w-full text-left"
+            }`}
+            title="Incoming Meeting CheckIn"
+          >
+            {sidebarCollapsed ? "Meet" : "Incoming Meeting CheckIn"}
+          </button>
+        </div>
       </div>
     </>
   );

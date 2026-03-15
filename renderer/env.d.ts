@@ -10,6 +10,7 @@ import type {
   Meeting,
   Task,
   TaskStatus,
+  UpdateMeetingSupportInput,
   UserPreferences,
 } from "./types";
 
@@ -20,6 +21,7 @@ declare global {
       updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
       createTask: (payload: CreateTaskInput) => Promise<Task>;
       createMeeting: (payload: CreateMeetingInput) => Promise<Meeting>;
+      updateMeetingSupport: (payload: UpdateMeetingSupportInput) => Promise<Meeting | undefined>;
       saveUserPreferences: (payload: UserPreferences) => Promise<UserPreferences>;
       saveEnergyLog: (
         payload: Omit<EnergyLog, "id" | "timestamp">,

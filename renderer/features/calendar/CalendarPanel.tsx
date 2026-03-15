@@ -42,6 +42,17 @@ export function CalendarPanel({ meetings }: CalendarPanelProps) {
               </span>
               <span>{meeting.notes}</span>
             </div>
+            {(meeting.prepChecklist?.length || meeting.rescheduleEmailDraft) && (
+              <div className="mt-3 space-y-1 text-xs text-slate-400">
+                {meeting.prepChecklist && meeting.prepChecklist.length > 0 && (
+                  <p>
+                    Prep: {meeting.prepChecklist.filter((item) => item.done).length}/
+                    {meeting.prepChecklist.length} ready
+                  </p>
+                )}
+                {meeting.rescheduleEmailDraft && <p>Reschedule email saved</p>}
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -7,6 +7,7 @@ import type {
   Meeting,
   ScheduleBlock,
   Task,
+  UpdateMeetingSupportInput,
 } from "../types";
 
 interface CalendarState {
@@ -16,6 +17,7 @@ interface CalendarState {
   recomputeSchedule: (tasks: Task[], latestEnergy?: EnergyLog) => void;
   moveBlockByMinutes: (blockId: string, minutes: number) => void;
   addMeeting: (payload: CreateMeetingInput) => Promise<Meeting>;
+  updateMeetingSupport: (payload: UpdateMeetingSupportInput) => Promise<Meeting | undefined>;
 }
 
 function shiftIso(timestamp: string, minutes: number): string {
@@ -60,6 +62,29 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
     return meeting;
   },
+  updateMeetingSupport: async (payload) => {
+    const updated = window.clarity
+      ? await window.clarity.updateMeetingSupport(payload)
+      : (() => {
+          const existing = get().meetings.find((meeting) => meeting.id === payload.meetingId);
+          return existing
+            ? {
+                ...existing,
+                prepChecklist: payload.prepChecklist ?? existing.prepChecklist ?? [],
+                rescheduleReason: payload.rescheduleReason,
+                rescheduleEmailDraft: payload.rescheduleEmailDraft ?? existing.rescheduleEmailDraft,
+              }
+            : undefined;
+        })();
+    if (!updated) return undefined;
+    const meeting = normalizeMeeting(updated);
+
+    set((state) => ({
+      meetings: state.meetings.map((item) => (item.id === meeting.id ? meeting : item)),
+    }));
+
+    return meeting;
+  },
 }));
 
 function normalizeMeeting(meeting: Meeting): Meeting {
@@ -72,6 +97,9 @@ function normalizeMeeting(meeting: Meeting): Meeting {
     hostName: meeting.hostName,
     hostContact: meeting.hostContact,
     hostPreferredChannel: meeting.hostPreferredChannel,
+    prepChecklist: meeting.prepChecklist ?? [],
+    rescheduleReason: meeting.rescheduleReason,
+    rescheduleEmailDraft: meeting.rescheduleEmailDraft,
   };
 }
 
@@ -94,5 +122,6 @@ function createLocalMeeting(payload: CreateMeetingInput): Meeting {
     hostName: payload.hostName?.trim() || undefined,
     hostContact: payload.hostContact?.trim() || undefined,
     hostPreferredChannel: payload.hostPreferredChannel || undefined,
+    prepChecklist: [],
   };
 }

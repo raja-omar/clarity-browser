@@ -77,6 +77,12 @@ export interface TaskSubtask {
   done: boolean;
 }
 
+export interface MeetingPrepItem {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -124,6 +130,16 @@ export interface Meeting {
   hostName?: string;
   hostContact?: string;
   hostPreferredChannel?: HostPreferredChannel;
+  prepChecklist?: MeetingPrepItem[];
+  rescheduleReason?: string;
+  rescheduleEmailDraft?: string;
+}
+
+export interface UpdateMeetingSupportInput {
+  meetingId: string;
+  prepChecklist?: MeetingPrepItem[];
+  rescheduleReason?: string;
+  rescheduleEmailDraft?: string;
 }
 
 export interface EnergyLog {

@@ -68,21 +68,26 @@ function buildReliefPlanPrompt(input: GenerateReliefPlanInput): string {
   const recipientRole =
     input.cause === "work" ? "a senior engineer who can unblock the ticket" : "a manager or senior engineer";
 
-  return `You are Clarity AI Coach helping with a Jira ticket popup.
+  return `You are Clarity AI Coach — a calm, practical workplace assistant embedded in a developer's browser.
 
-Ticket title: ${input.ticketTitle}
-Ticket description: ${input.ticketDescription}
-Feeling: ${input.feeling}
-Cause: ${input.cause}
-User explanation: ${input.userExplanation}
-Recipient name: ${recipientName}
+A developer just received a due-soon notification for a Jira ticket and told you how they're feeling about it.
 
-Your job:
-- Understand the specific blocker from the user's explanation.
-- Give a personalized first action that is concrete and immediately useful.
-- Write a short realistic workplace message to ${recipientName} (${recipientRole}).
-- Keep the tone supportive, practical, and calm.
-- Do not sound generic or robotic.
+--- TICKET CONTEXT ---
+Title: ${input.ticketTitle}
+Description:
+${input.ticketDescription}
+--- END TICKET CONTEXT ---
+
+The developer is feeling: ${input.feeling === "overwhelmed" ? "overwhelmed / stuck" : "on track but wants help staying focused"}
+Root cause: ${input.cause === "work" ? "a work-related blocker (technical, process, or dependency)" : "a personal issue affecting their ability to focus"}
+In their own words: "${input.userExplanation}"
+
+The person they'd reach out to for help is ${recipientName} (${recipientRole}).
+
+Your task:
+1. Read the ticket description carefully — understand what the actual work involves (e.g. specific systems, APIs, tests, components mentioned).
+2. Connect the developer's stated blocker to the ticket's scope. What part of the ticket is causing the problem?
+3. Produce a plan that feels like it was written by someone who actually read the ticket, not a generic template.
 
 Return JSON only in this exact shape:
 {
@@ -92,13 +97,15 @@ Return JSON only in this exact shape:
   "optionalNextSteps": ["string", "string"]
 }
 
-Rules:
-- Make summary 1-2 sentences max.
-- Make firstAction specific to the user's stated problem.
-- Make helpMessage easy to copy and send.
-- optionalNextSteps should have 1-3 short concrete items.
-- No markdown fences.
-- No extra text outside the JSON.`;
+Field guidance:
+- summary: 1-2 sentences that acknowledge the developer's situation and name the specific part of the ticket causing friction. Reference concrete details from the description.
+- firstAction: A single, immediately actionable step tied to the ticket's actual work. If the description mentions logs, say which logs. If it mentions an API, name it. Never say "review the ticket" — they already know what it says.
+- helpMessage: A ready-to-send message to ${recipientName} that a real developer would actually send. Reference the ticket title and the specific blocker. Keep it professional but human — not overly formal, not robotic.
+- optionalNextSteps: 1-3 concrete follow-ups that reference specifics from the ticket description (systems, components, tests, configs mentioned).
+
+Hard rules:
+- Every field must reference something specific from the ticket description or the developer's explanation. No generic advice.
+- No markdown fences, no extra text outside the JSON.`;
 }
 
 function parseReliefPlanResponse(reply: string): ReliefPlanResult | undefined {
